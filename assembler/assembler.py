@@ -1,6 +1,8 @@
 import sys
 import re
 
+from instructions_map import instr_to_bits
+
 start_addr = 0x00022000
 
 if len(sys.argv) != 3:
@@ -25,12 +27,14 @@ class Here:
         current_section.instructions.append(Location(self))
 
     def __add__(self, other):
-        self.offset += other
-        return self
+        h = Here()
+        h.offset = self.offset + other
+        return h
 
     def __sub__(self, other):
-        self.offset -= other
-        return self
+        h = Here()
+        h.offset = self.offset - other
+        return h
     
     def __repr__(self) -> str:
         if self.resolved is not None:
@@ -47,28 +51,28 @@ class uint:
         self.value = value
 
     def __add__(self, other):
-        self.value += other
-        if self.value < 0:
-            raise Exception(f'Uint cannot be negative: {self}!')
-        return self
+        value = self.value + other
+        if value < 0:
+            raise Exception(f'Uint cannot be negative: {value}!')
+        return uint(value)
 
     def __sub__(self, other):
-        self.value -= other
-        if self.value < 0:
-            raise Exception(f'Uint cannot be negative: {self}!')
-        return self
+        value = self.value - other
+        if value < 0:
+            raise Exception(f'Uint cannot be negative: {value}!')
+        return uint(value)
     
     def __mul__(self, other):
-        self.value *= other
-        if self.value < 0:
-            raise Exception(f'Uint cannot be negative: {self}!')
-        return self
+        value = self.value * other
+        if value < 0:
+            raise Exception(f'Uint cannot be negative: {value}!')
+        return uint(value)
     
     def __floordiv__(self, other):
-        self.value //= other
-        if self.value < 0:
-            raise Exception(f'Uint cannot be negative: {self}!')
-        return self
+        value = self.value // other
+        if value < 0:
+            raise Exception(f'Uint cannot be negative: {value}!')
+        return uint(value)
     
     def __repr__(self) -> str:
         return f'0x{self.value:X}u'
@@ -112,7 +116,7 @@ def eval_var(var: str, line=-1):
 vars = { 'Here': Here, 'uint': uint }
 
 sections = []
-current_section = None
+current_section = Section(uint(start_addr))
 
 
 def resolve(section):
@@ -124,7 +128,7 @@ def resolve(section):
 
 for i, line in enumerate(lines):
     line = line.strip()
-    if len(line) == 0:
+    if len(line) == 0 or line.startswith(';'):
         continue
     if line[0] == '#':
         name, expr = line[1:].split(' ', 1)
@@ -143,8 +147,7 @@ for i, line in enumerate(lines):
             error(f'no sections before {start_addr} allowed: {addr}', i)
         section = Section(addr)
         sections.append(section)
-        if current_section is not None:
-            resolve(current_section)
+        resolve(current_section)
         current_section = section
     else:
         args = line.split()
@@ -157,37 +160,40 @@ for i, line in enumerate(lines):
             else:
                 current_section.instructions.append(r)
 
-if current_section is not None:
-    resolve(current_section)
+resolve(current_section)
 
 sections = sorted(sections, key=lambda s: s.addr.value)
 
 
 
 with open(outfile, 'wb') as outbin:
-    last_addr = start_addr
+    last_addr = start_addr-4
     for section in sections:
+        if section.addr.value <= last_addr:
+            raise Exception(f'Invalid location {section.addr.value:08X}, already are at {last_addr:08X}')
+        outbin.write(bytes(section.addr.value-last_addr-4))
+        last_addr = section.addr.value
         for instr in section.instructions:
             if type(instr) == Location:
-                # is only marker
+                # marker
                 pass
             elif type(instr) == list:
-                b = '11111111_000'
                 cmd = instr[0]
+                b = instr_to_bits(cmd)
                 for arg in instr[1:]:
                     if arg == '!':
                         b += '1000000'
                     elif arg[0] == '%' and arg[1:].isnumeric():
-                        n = int(arg[1:])
+                        n = int(arg[1:], base=16)
                         if n > 48:
                             raise Exception(f'invalid trg num "{arg}"')
                         b += '0' + f'{n:06b}'
                     elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F']:
-                        n = ['S', 'I', 'L', 'C', 'F'].index(arg[1])
+                        n = ['S', 'I', 'L', 'C', 'F'].index(arg[1]) + 48
                         b += '0' + f'{n:06b}'
                     else:
                         raise Exception(f'invalid arg "{arg}"')
-                b += '0' * (33-len(b))
+                b += '0' * (32-len(b))
                 outbin.write(bytes(int(b, base=2).to_bytes(4, 'big')))
             elif type(instr) == int:
                 outbin.write(instr.to_bytes(4, 'little'))
@@ -196,4 +202,4 @@ with open(outfile, 'wb') as outbin:
             elif type(instr) == Here:
                 outbin.write((instr.resolved + instr.offset).value.to_bytes(4, 'little'))
             else:
-                raise Exception
+                raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')

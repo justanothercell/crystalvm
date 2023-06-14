@@ -11,7 +11,7 @@
 #INTERRUPT 0x00022000
 #START 0x00022100
 
-#regids [f'%{id}' for id in range(49)]
+#regids [f'%{id:02X}' for id in range(49)]
 #newreg lambda: regids.pop(0)
 #dropreg lambda x: regids.insert(0, x)
 
@@ -23,17 +23,20 @@
     #max newreg()
     #one newreg()
     #screen_char newreg()
+    #loop_reg newreg()
     ldl @counter 0u
     ldl @max 255u
     ldl @one 1u
     ldl @screen_char @TEXT_BUF_1
+    ldl @loop_reg @loop
     #loop $
         st @screen_char @counter
         addu @counter @one @counter
         addu @screen_char @one @screen_char
         cmpu @counter @screen_char
-        jne @loop
+        jnz @loop_reg
     #_ dropreg(counter)
     #_ dropreg(max)
     #_ dropreg(one)
     #_ dropreg(screen_char)
+    #_ dropreg(loop_reg)
