@@ -31,7 +31,7 @@ with open(file, 'rb') as source_file:
                 else:
                     r = int(arg, base=2)
                     if r >= 48:
-                        params.append(f'%{["S", "I", "L", "C", "F"][r-48]}')
+                        params.append(f'%{["S", "I", "L", "C", "F", "Q"][r-48]}')
                     else:
                         params.append(f'%{r:02X}')
 

@@ -11,13 +11,14 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 - stack and regs
 
 ## Registers/Stack
-- normal regs (0x00-0x30 / 0-48)
-- program stack (S, reg 0x31 / 49)
-- instruction pointer (I, reg 0x32 / 50)
-- frame pointer (L, reg 0x33 / 51)<br>
+- normal regs (0x00-0x29 / 0-47)
+- program stack (S, reg 0x30 / 48)
+- instruction pointer (I, reg 0x31 / 49)
+- frame pointer (L, reg 0x32 / 50)<br>
 (points to base of current stack frame) 
-- carry register (C, reg 0x34 / 52)
-- flag register (F, reg 0x35 / 53)
+- carry register (C, reg 0x33 / 51)
+- flag register (F, reg 0x34 / 52)
+- interrupt id (Q, reg 0x35 / 53)
 
 ### Flag Register
 ```
@@ -26,7 +27,7 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
  ^       ^^                  ^^^^
  K       SB                  OCSZ
 Z: Zero Flag     (jz/jnz)
-S: Sign Flag     (jl/lnl)
+S: Sign Flag (1: negative)    (jl/lnl)
 C: Carry Flag    (jc/jnc)
 O: Overflow Flag (jo/jno)
 
@@ -38,18 +39,18 @@ K: Keyboard Event queued
 
 ## Memory layout
 ```
-0x00000000-0x0000f9ff screen buffer 1    (64000 / 0xfa00)
-0x0000fa00-0x0001f3ff screen buffer 2    (64000 / 0xfa00)
-0x0001f400-0x0001f7e7 text buffer 1      ( 1000 / 0x03e8)
-0x0001f7e8-0x0001f7ff alignment space    (   24 / 0x0018)
-0x0001f800-0x0001fbe7 text buffer 2      ( 1000 / 0x03e8)
-0x0001fbe8-0x0001feff alignment space    (   24 / 0x0018)
-0x0001ff00-0x00021eff stack              ( 8192 / 0x2000)
-0x00021f00-0x00021fff ascii font bitmask ( 256  / 0x00ff)
-0x00022000-0x000220ff interrupt handler  ( 256  / 0x00ff)
-0x00022100 program start
+0x00000000-0x0003e7ff screen buffer 1    (256000 / 0x03e800)
+0x0003e800-0x0007cfff screen buffer 2    (256000 / 0x03e800)
+0x0007d000-0x0007df9f text buffer 1      (  4000 / 0x000fa0)
+0x0007dfa0-0x0007dfff alignment space    (    96 / 0x000060)
+0x0007e000-0x0007ef9f text buffer 2      (  4000 / 0x000fa0)
+0x0007efa0-0x0007efff alignment space    (    96 / 0x000060)
+0x0007f000-0x00086fff stack              ( 32768 / 0x008000)
+0x00087000-0x000873ff ascii font bitmask (  1024 / 0x000400)
+0x00087400-0x00087fff interrupt handler  (  3072 / 0x000C00)
+0x00088000 program start
 
-=> images start at address 0x00022000
+=> images start at address 0x00087400
 ```
 
 ## Instructions
@@ -110,7 +111,7 @@ The carry register contains the over/underflow of the operation
 #### Operations only for signed ints
 | `ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation        |
 |---------------|------|------|------|------|------------------|
-| `000 1 1 000` | absi | arg  | ---  | res  | res = \|arg\|    |
+| `000 1 1 000` | absi | arg  | res  | ---  | res = \|arg\|    |
 | `000 1 1 001` | powi | lhs  | rhs  | res  | res = lhs ** rhs |
 
 #### Bitwise operations
@@ -119,7 +120,7 @@ The carry register contains the over/underflow of the operation
 | `000 0 1 000` | and  | lhs  | rhs  | res  | res = lhs & rhs            |
 | `000 0 1 001` | or   | lhs  | rhs  | res  | res = lhs | rhs            |
 | `000 0 1 010` | xor  | lhs  | rhs  | res  | res = lhs ^ rhs            |
-| `000 0 1 011` | not  | arg  | ---  | res  | res = ~arg                 |
+| `000 0 1 011` | not  | arg  | res  | ---  | res = ~arg                 |
 | `000 0 1 100` | shl  | lhs  | rhs  | res  | res = lhs << rhs           |
 | `000 0 1 101` | shr  | lhs  | rhs  | res  | res = lhs >> rhs           |
 | `000 0 1 110` | rol  | lhs  | rhs  | res  | res = lhs <<< rhs (rotate) |
@@ -128,35 +129,37 @@ The carry register contains the over/underflow of the operation
 ### Conversions
 | `ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation       |
 |---------------|------|------|------|------|-----------------|
-| `000 1 1 100` | itu  | arg  | ---  | res  | int -> unsigned |
-| `000 1 1 101` | uti  | arg  | ---  | res  | unsigned -> int |
-| `000 1 1 110` | itf  | arg  | ---  | res  | int -> float    |
-| `000 1 1 111` | fti  | arg  | ---  | res  | float -> int    |
+| `000 1 1 100` | itu  | arg  | res  | ---  | int -> unsigned |
+| `000 1 1 101` | uti  | arg  | res  | ---  | unsigned -> int |
+| `000 1 1 110` | itf  | arg  | res  | ---  | int -> float    |
+| `000 1 1 111` | fti  | arg  | res  | ---  | float -> int    |
 
 ### Floating point Arithmetic
 
-| `ABC DEFGH` | casm | arg0 | arg1 | arg2 | operation         |
-|-------------|------|------|------|------|-------------------|
-| `001 00000` | addf | lhs  | rhs  | res  | res = lhs + rhs   |
-| `001 00001` | subf | lhs  | rhs  | res  | res = lhs - rhs   |
-| `001 00010` | mulf | lhs  | rhs  | res  | res = lhs * rhs   |
-| `001 00011` | divf | lhs  | rhs  | res  | res = lhs / rhs   |
-| `001 00100` | modf | lhs  | rhs  | res  | res = lhs % rhs   |
-| `001 00101` | absf | arg  | ---  | res  | res = \|arg\|     |
-| `001 00110` | powf | lhs  | rhs  | res  | res = lhs % rhs   |
-| `001 00111` | cmpf | lhs  | rhs  | res  | set S+Z of F reg  |
-| `001 01000` | sqrt | arg  | ---  | res  | res = sqrt(arg)   |
-| `001 01001` | exp  | arg  | ---  | res  | res = arg**e      |
-| `001 01010` | ln   | arg  | ---  | res  | res = ln(arg)     |
-| `001 01011` | sin  | arg  | ---  | res  | res = sin(arg)    |
-| `001 01100` | asin | arg  | ---  | res  | res = asin(arg)   |
-| `001 01101` | cos  | arg  | ---  | res  | res = cos(arg)    |
-| `001 01110` | tan  | arg  | ---  | res  | res = tan(arg)    |
-| `001 01111` | atan | arg  | ---  | res  | res = atan(arg)   |
-| `001 10000` | sinh | arg  | ---  | res  | res = sinh(arg)   |
-| `001 10001` | asih | arg  | ---  | res  | res = asinh(arg)  |
-| `001 10010` | cosh | arg  | ---  | res  | res = cosh(arg)   |
-| `001 10011` | acoh | arg  | ---  | res  | res = acosh(arg)  |
+| `ABC DEFGH` | casm  | arg0 | arg1 | arg2 | operation          |
+|-------------|-------|------|------|------|--------------------|
+| `001 00000` | addf  | lhs  | rhs  | res  | res = lhs + rhs    |
+| `001 00001` | subf  | lhs  | rhs  | res  | res = lhs - rhs    |
+| `001 00010` | mulf  | lhs  | rhs  | res  | res = lhs * rhs    |
+| `001 00011` | divf  | lhs  | rhs  | res  | res = lhs / rhs    |
+| `001 00100` | modf  | lhs  | rhs  | res  | res = lhs % rhs    |
+| `001 00101` | absf  | arg  | res  | ---  | res = \|arg\|      |
+| `001 00110` | powfi | lhs  | rhs  | res  | res = lhs ** i_rhs |
+| `001 10110` | powff | lhs  | rhs  | res  | res = lhs ** rhs   |
+| `001 00111` | cmpf  | lhs  | rhs  | res  | set S+Z of F reg   |
+| `001 01000` | sqrt  | arg  | res  | ---  | res = sqrt(arg)    |
+| `001 01001` | exp   | arg  | res  | ---  | res = arg**e       |
+| `001 01010` | log   | lhs  | rhs  | res  | res = log(lhs, rhs)|
+| `001 11010` | ln    | arg  | res  | ---  | res = ln(arg)      |
+| `001 01011` | sin   | arg  | res  | ---  | res = sin(arg)     |
+| `001 01100` | asin  | arg  | res  | ---  | res = asin(arg)    |
+| `001 01101` | cos   | arg  | res  | ---  | res = cos(arg)     |
+| `001 01110` | tan   | arg  | res  | ---  | res = tan(arg)     |
+| `001 01111` | atan  | arg  | res  | ---  | res = atan(arg)    |
+| `001 10000` | sinh  | arg  | res  | ---  | res = sinh(arg)    |
+| `001 10001` | asih  | arg  | res  | ---  | res = asinh(arg)   |
+| `001 10010` | cosh  | arg  | res  | ---  | res = cosh(arg)    |
+| `001 10011` | acoh  | arg  | res  | ---  | res = acosh(arg)   |
 
 ### Control Flow
 #### Jumps
@@ -174,15 +177,15 @@ The carry register contains the over/underflow of the operation
 #### Procedures
 | `ABC D EFGH` | casm | arg0 | arg1 | arg2 | notes                                    |
 |--------------|------|------|------|------|------------------------------------------|
-| `010 1 0000` | call | addr | ---  | ---  | pushes reg I+F to stack, jumps, sets F  |
-| `010 1 0001` | ret  | ---  | ---  | ---  | jumps to last instr on stack, restores F |
+| `010 1 0000` | call | addr | ---  | ---  | pushes reg I+F to stack, jumps, sets F   |
+| `010 1 0001` | ret  | ---  | ---  | ---  | jumps to addr on stack, restores F       |
 
 ### Stack and Registers
 | `ABC DEFGH` | casm  | arg0 | arg1 | arg2 | notes                                     |
 |-------------|-------|------|------|------|-------------------------------------------|
 | `100 00000` | move  | src  | dst  | ---  | move src to dest, popping if src is stack |
 | `100 00001` | ld    | dst  | src  | ---  | set dst to memory @src                    |
-| `100 00010` | ldl   | dst  | src  | ---  | set dst to next value in memory after I   |
+| `100 00010` | ldl   | dst  | ---  | ---  | set dst to next value in memory after I   |
 | `100 00011` | st    | src  | dst  | ---  | set memory @dst to src                    |
 | `100 01000` | dup   | ---  | ---  | ---  | duplicate topmost stack elem              |
 | `100 01001` | over  | ---  | ---  | ---  | dup second to topmost elem                |
@@ -198,13 +201,7 @@ The carry register contains the over/underflow of the operation
 | `ABC DE FGH` | casm  | arg0   | arg1 | arg2 | notes                                     |
 |--------------|-------|--------|------|------|-------------------------------------------|
 | `111 00 000` | sleep | millis | ---  | ---  | sleep the specified amout of milliseconds |
-| `111 00 001` | dinfo | id     | src  | ---  | get info about device interrupting        |
-| `111 00 010` | st    | src    | dst  | ---  | set memory @dst to src                    |
-| `111 01 000` | dup   | ---    | ---  | ---  | duplicate topmost stack elem              |
-| `111 01 001` | over  | ---    | ---  | ---  | dup second to topmost elem                |
-| `111 01 010` | srl   | ---    | ---  | ---  | rotates the top 3 elems left: ABC -> BCA  |
-| `111 01 011` | srr   | ---    | ---  | ---  | rotates the top 3 elems right: ABC -> CAB |
-| `111 01 100` | enter | ---    | ---  | ---  | saves L to stack, sets L to S             |
-| `111 01 101` | leave | ---    | ---  | ---  | set S to L, restores L from stack         |
+| `111 00 001` | wait  | cycles | ---  | ---  | wait n instr cycles, then interrupt with id 0. 'wait 0' cancels a wait |
+| `111 00 002` | dinfo | id     | dst  | ---  | writes device info to *dst                |
 
 ## Interrupts

@@ -8,8 +8,8 @@
 #TEXT_W 40
 #TEXT_H 25
 
-#INTERRUPT 0x00022000
-#START 0x00022100
+#INTERRUPT 0x00087400
+#START 0x00088000
 
 #regids [f'%{id:02X}' for id in range(49)]
 #newreg lambda: regids.pop(0)

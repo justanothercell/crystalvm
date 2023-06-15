@@ -3,7 +3,7 @@ import re
 
 from instructions_map import instr_to_bits
 
-start_addr = 0x00022000
+start_addr = 0x087400
 
 if len(sys.argv) != 3:
     print('usage: assepbler.py <in.casm> <out.cstl>')
@@ -85,7 +85,6 @@ class Section:
         self.addr = addr
         self.instructions = []
 
-
 class Location:
     def __init__(self, here) -> None:
         self.here = here
@@ -123,7 +122,7 @@ def resolve(section):
     d = 0
     for c, instr in enumerate(section.instructions):
         if type(instr) == Location:
-            instr.here.resolved = section.addr + c - d
+            instr.here.resolved = section.addr + (c - d) * 4
             d += 1
 
 for i, line in enumerate(lines):
@@ -144,7 +143,7 @@ for i, line in enumerate(lines):
         if type(addr) != uint:
             error(f'section has to be resolved to an uint: {addr}', i)
         if addr.value < start_addr:
-            error(f'no sections before {start_addr} allowed: {addr}', i)
+            error(f'no sections before {start_addr:X} allowed: {addr}', i)
         section = Section(addr)
         sections.append(section)
         resolve(current_section)
@@ -188,8 +187,8 @@ with open(outfile, 'wb') as outbin:
                         if n > 48:
                             raise Exception(f'invalid trg num "{arg}"')
                         b += '0' + f'{n:06b}'
-                    elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F']:
-                        n = ['S', 'I', 'L', 'C', 'F'].index(arg[1]) + 48
+                    elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F', 'Q']:
+                        n = ['S', 'I', 'L', 'C', 'F', 'Q'].index(arg[1]) + 48
                         b += '0' + f'{n:06b}'
                     else:
                         raise Exception(f'invalid arg "{arg}"')
