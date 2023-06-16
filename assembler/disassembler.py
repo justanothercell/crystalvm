@@ -23,7 +23,7 @@ with open(file, 'rb') as source_file:
             try:
                 instr = bits_to_instr(instr)
             except:
-                pass
+                instr = '; ' + instr
             params = []
             for arg in args:
                 if arg == '1000000':
@@ -36,13 +36,13 @@ with open(file, 'rb') as source_file:
                         params.append(f'%{r:02X}')
 
             if instr == 'ldl':
-                dest_file.write(f'{instr:5} {params[0]:3} {params[1]:3} {params[2]:3} 0x{int.from_bytes(source_file.read(4), "little"):08X}\n')
+                dest_file.write(f'{instr:5} {params[0]:3} {params[1]:3} {params[2]:3} 0x{int.from_bytes(source_file.read(4), "big"):08X}\n')
                 if length is not None:
                     length -= 4
                     if length <= 0:
                         break
             else:
-                dest_file.write(f'; {instr:5} {params[0]:3} {params[1]:3} {params[2]:3}\n')
+                dest_file.write(f'{instr:5} {params[0]:3} {params[1]:3} {params[2]:3}\n')
             if length is not None:
                 length -= 4
                 if length <= 0:

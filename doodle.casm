@@ -13,7 +13,7 @@
 
 #regids [f'%{id:02X}' for id in range(49)]
 #newreg lambda: regids.pop(0)
-#dropreg lambda x: regids.insert(0, x)
+#dropreg lambda x: (regids.append(x), regids.sort())
 
 ~@INTERRUPT
     ret
@@ -33,10 +33,15 @@
         st @screen_char @counter
         addu @counter @one @counter
         addu @screen_char @one @screen_char
-        cmpu @counter @screen_char
+        cmpu @counter @max
         jnz @loop_reg
     #_ dropreg(counter)
     #_ dropreg(max)
     #_ dropreg(one)
     #_ dropreg(screen_char)
     #_ dropreg(loop_reg)
+    #hlt_reg newreg()
+    ldl @hlt_reg @hlt
+    #hlt $
+        jmp @hlt_reg
+    #_ dropreg(hlt_reg)

@@ -24,17 +24,17 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 ```
 32 bit
  00000000111111110000000011111111
- ^       ^^                  ^^^^
- K       SB                  OCSZ
-Z: Zero Flag     (jz/jnz)
-S: Sign Flag (1: negative)    (jl/lnl)
-C: Carry Flag    (jc/jnc)
-O: Overflow Flag (jo/jno)
+         ^^      ^           ^^^^
+         SB      M           OCSZ
+Z: Zero/Equal Flag         (jz/jnz)
+S: Sign Flag (1: negative) (jl/lnl)
+C: Carry Flag              (jc/jnc)
+O: Overflow Flag           (jo/jno)
+M: Carry In
+
 
 S: Screen Mode (0: text, 1: video)
 B: Actve buffer (0: buffer 1, 1: buffer 2)
-
-K: Keyboard Event queued
 ```
 
 ## Memory layout

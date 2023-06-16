@@ -95,6 +95,13 @@ class Location:
 class Stack:
     def __repr__(self) -> str:
         return 'Stack'
+    
+class Variable:
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self) -> str:
+        return f'Variable({self.name})'
 
 def eval_var(var: str, line=-1):
     var = var.strip()
@@ -105,7 +112,8 @@ def eval_var(var: str, line=-1):
     if var[0] == '@':
         if var[1:] in vars:
             return vars[var[1:]]
-        error(f'No such macro variable: "{var[1:]}"', line)
+        return Variable(var[1:])
+        # error(f'No such macro variable: "{var[1:]}"', line)
     if var[-1] == 'u':
         return uint(int(var[:-1], base=0))
     if len(var) > 2 and not var[1].isnumeric():
@@ -135,6 +143,8 @@ for i, line in enumerate(lines):
         for match in re.findall(r'0[xX][0-9A-Fa-f]+|0[oO][0-7]+|0[bB][01]+', expr):
             expr = expr.replace(match, str(eval_var(match)))
         try:
+            if name in vars and name != '_':
+                error(f'variable {name} already exists, can\'t be redefined', i)
             vars[name] = eval(expr, vars)
         except Exception as e:
             error(e, i)
@@ -173,6 +183,8 @@ with open(outfile, 'wb') as outbin:
         outbin.write(bytes(section.addr.value-last_addr-4))
         last_addr = section.addr.value
         for instr in section.instructions:
+            if type(instr) == Variable:
+                instr = vars[instr.name]
             if type(instr) == Location:
                 # marker
                 pass
@@ -195,10 +207,10 @@ with open(outfile, 'wb') as outbin:
                 b += '0' * (32-len(b))
                 outbin.write(bytes(int(b, base=2).to_bytes(4, 'big')))
             elif type(instr) == int:
-                outbin.write(instr.to_bytes(4, 'little'))
+                outbin.write(instr.to_bytes(4, 'big'))
             elif type(instr) == uint:
-                outbin.write(instr.value.to_bytes(4, 'little'))
+                outbin.write(instr.value.to_bytes(4, 'big'))
             elif type(instr) == Here:
-                outbin.write((instr.resolved + instr.offset).value.to_bytes(4, 'little'))
+                outbin.write((instr.resolved + instr.offset).value.to_bytes(4, 'big'))
             else:
                 raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')

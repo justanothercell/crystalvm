@@ -2,17 +2,17 @@ use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration};
 use std::ops::*;
 
 /// STACK
-const REG_S: usize = 48;
+pub const REG_S: usize = 48;
 // INSTR PTR
-const REG_I: usize = 49;
+pub const REG_I: usize = 49;
 /// FRAME PTR
-const REG_L: usize = 50;
+pub const REG_L: usize = 50;
 // CARRY
-const REG_C: usize = 51;
+pub const REG_C: usize = 51;
 // FLAG
-const REG_F: usize = 52;
+pub const REG_F: usize = 52;
 // INTERRUPT ID
-const REG_Q: usize = 53;
+pub const REG_Q: usize = 53;
 
 pub struct Machine {
     pub(crate) memory: Vec<u8>,
@@ -27,15 +27,15 @@ impl Machine {
         let img_size = image.stream_len().unwrap() as usize;
         let mut image_contents = Vec::with_capacity(img_size);
         image.read_to_end(&mut image_contents).unwrap();
-        if memory_size < img_size + 0x88000 {
-            panic!("need at least {:X} memory cells, only got {:X} supplied", img_size + 0x087400, memory_size)
+        if memory_size < img_size + 0x00087400 {
+            panic!("need at least {:X} memory cells, only got {:X} supplied", img_size + 0x00087400, memory_size)
         }
         let mut machine = Machine {  
             memory: {
                 let mut m = Vec::with_capacity(memory_size);
                 unsafe{ 
                     m.set_len(memory_size);
-                    std::ptr::copy_nonoverlapping(image_contents.as_mut_ptr(), (m.as_mut_ptr() as usize + 0x087400) as *mut u8, image_contents.len())
+                    std::ptr::copy_nonoverlapping(image_contents.as_mut_ptr(), (m.as_mut_ptr() as usize + 0x00087400) as *mut u8, image_contents.len())
                 }
                 m
             },
@@ -43,11 +43,11 @@ impl Machine {
             next_device_id: 1,
             interrupt_wait_counter: 0
         };
-        machine.registers[REG_I] = 0x22100;
+        machine.registers[REG_I] = 0x088000;
         machine
     }
 
-    pub(crate)fn execute_next(&mut self) {
+    pub(crate) fn execute_next(&mut self) {
         let raw = self.read_word(self.registers[REG_I]);
         let instr = raw >> 21;
         let arg0 = (raw >> 14 & 0b01111111) as u8;
@@ -70,6 +70,32 @@ impl Machine {
                 let b: $ty = std::mem::transmute(self.fetch_data(arg1));
                 self.set_data(arg2, std::mem::transmute($ty::$fun(a, b)))
             } }};
+            ($ty: ident::$fun: ident (a, b) carry bool) => { linear_instr!{ unsafe {
+                let a: $ty = std::mem::transmute(self.fetch_data(arg0));
+                let b: $ty = std::mem::transmute(self.fetch_data(arg1));
+                let carry_in = self.registers[REG_F] & (0b1 << 15) > 0;
+                let (r, carry) = $ty::$fun(a, b, if carry_in { self.registers[REG_C] & 0b1 > 0 } else { false });
+                self.set_data(arg2, std::mem::transmute(r));
+                self.registers[REG_C] = carry as u32;
+                self.registers[REG_F] = (self.registers[REG_F] & !0b100) | ((carry as u32) << 4);
+            } }};
+            ($ty: ident::$fun: ident (a, b) carry self) => { linear_instr!{ unsafe {
+                let a: $ty = std::mem::transmute(self.fetch_data(arg0));
+                let b: $ty = std::mem::transmute(self.fetch_data(arg1));
+                let carry_in = self.registers[REG_F] & (0b1 << 15) > 0;
+                let (r, carry) = $ty::$fun(a, b, if carry_in { std::mem::transmute(self.registers[REG_C]) } else { std::mem::transmute(0) });
+                self.set_data(arg2, std::mem::transmute(r));
+                self.registers[REG_C] = std::mem::transmute(carry);
+                self.registers[REG_F] = (self.registers[REG_F] & !0b100) | (((carry != 0) as u32) << 4);
+            } }};
+            ($ty: ident::$fun: ident (a, b) overflow) => { linear_instr!{ unsafe {
+                let a: $ty = std::mem::transmute(self.fetch_data(arg0));
+                let b: $ty = std::mem::transmute(self.fetch_data(arg1));
+                let (r, carry) = $ty::$fun(a, b);
+                self.set_data(arg2, std::mem::transmute(r));
+                self.registers[REG_C] = carry as u32;
+                self.registers[REG_F] = (self.registers[REG_F] & !0b100) | ((carry as u32) << 4);
+            } }};
 
             ($ty: ident |$a: ident| $expr: expr) => { linear_instr!{ unsafe {
                 let $a: $ty = std::mem::transmute(self.fetch_data(arg0));
@@ -80,6 +106,15 @@ impl Machine {
                 let $a: $tya = std::mem::transmute(self.fetch_data(arg0));
                 let $b: $tyb = std::mem::transmute(self.fetch_data(arg1));
                 self.set_data(arg2, std::mem::transmute($expr))
+            } }};
+        }
+        macro_rules! cmp {
+            ($ty: ident) => { linear_instr!{ unsafe {
+                let a: $ty = std::mem::transmute(self.fetch_data(arg0));
+                let b: $ty = std::mem::transmute(self.fetch_data(arg1));
+                println!("comparing: {a} {b}");
+                self.registers[REG_F] = (self.registers[REG_F] & !0b10000) | (((a == b) as u32) << 0);  // zero/eq
+                self.registers[REG_F] = (self.registers[REG_F] & !0b10000) | (((a < b) as u32) << 1);  // less
             } }};
         }
         macro_rules! jump_if {
@@ -94,18 +129,18 @@ impl Machine {
         }
         match instr {
             0b000_00000000 => linear_instr!(()), // noop
-            0b000_00000001 => arith_instr!(u32::add(a, b)), // addu
-            0b000_00000010 => arith_instr!(u32::sub(a, b)), // subu
-            0b000_00000011 => arith_instr!(u32::mul(a, b)), // mulu
+            0b000_00000001 => arith_instr!(u32::carrying_add(a, b) carry bool), // addu
+            0b000_00000010 => arith_instr!(u32::borrowing_sub(a, b) carry bool), // subu
+            0b000_00000011 => arith_instr!(u32::carrying_mul(a, b) carry self), // mulu
             0b000_00000100 => arith_instr!(u32::div(a, b)), // divu
             0b000_00000101 => arith_instr!(u32::rem(a, b)), // modu
-            0b000_00000111 => (), // cmpu
-            0b000_00010001 => arith_instr!(i32::add(a, b)), // addi
-            0b000_00010010 => arith_instr!(i32::sub(a, b)), // subi
-            0b000_00010011 => arith_instr!(i32::mul(a, b)), // muli
+            0b000_00000111 => cmp!(u32), // cmpu
+            0b000_00010001 => arith_instr!(i32::carrying_add(a, b) carry bool), // addi
+            0b000_00010010 => arith_instr!(i32::borrowing_sub(a, b) carry bool), // subi
+            0b000_00010011 => arith_instr!(i32::overflowing_mul(a, b) overflow), // muli
             0b000_00010100 => arith_instr!(i32::div(a, b)), // divi
             0b000_00010101 => arith_instr!(i32::rem(a, b)), // modi
-            0b000_00010111 => (), // cmpi
+            0b000_00010111 => cmp!(i32), // cmpi
             0b000_00011000 => arith_instr!(i32::abs(a)), // absi
             0b000_00011001 => arith_instr!(i32 u32 |a, b| i32::pow(a, b)), // powi
             0b000_00001000 => arith_instr!(u32::bitand(a, b)), // and
@@ -128,7 +163,7 @@ impl Machine {
             0b000_00100101 => arith_instr!(f32::abs(a)), // absf
             0b000_00100110 => arith_instr!(f32 i32 |a, b| f32::powi(a, b)), // powfi
             0b000_00110110 => arith_instr!(f32::powf(a, b)), // powfi
-            0b000_00100111 => (), // cmpf
+            0b000_00100111 => cmp!(f32), // cmpf
             0b000_00101000 => arith_instr!(f32::sqrt(a)), // sqrt
             0b000_00101001 => arith_instr!(f32::exp(a)), // exp
             0b000_00101010 => arith_instr!(f32::log(a, b)), // log
@@ -254,16 +289,16 @@ impl Machine {
     #[inline]
     fn read_word(&mut self, addr: u32) -> u32 {
         unsafe { 
-            let mut r = 0;
+            let mut r = 0u32;
             std::ptr::copy_nonoverlapping((self.memory.as_ptr() as usize + addr as usize) as *const u8,  &mut r as *mut u32 as *mut _, std::mem::size_of::<u32>());
-            r
+            r.swap_bytes()
         }
     }
 
     #[inline]
     fn write_word(&mut self, addr: u32, data: u32) {
         unsafe { 
-            std::ptr::copy_nonoverlapping(&data as *const u32 as _, (self.memory.as_mut_ptr() as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>())
+            std::ptr::copy_nonoverlapping(&data.swap_bytes() as *const u32 as _, (self.memory.as_mut_ptr() as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>())
         }
     }
     
