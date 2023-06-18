@@ -1,7 +1,7 @@
-use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration};
+use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration, sync::{Arc, Mutex}};
 use std::ops::*;
 
-use crate::screen::Screen;
+use crate::screen::{Screen, ScreenLifetime};
 
 /// STACK
 pub const REG_S: usize = 48;
@@ -44,7 +44,7 @@ pub struct Machine {
     pub(crate) registers: [u32; 54],
     pub(crate) next_device_id: u32,
     pub(crate) interrupt_wait_counter: u32,
-    pub(crate) screen: Screen
+    pub(crate) screen_life: Arc<Mutex<ScreenLifetime>>
 }
 
 impl Machine {
@@ -59,11 +59,13 @@ impl Machine {
         let mut memory = Vec::with_capacity(memory_size);
         unsafe{ 
             memory.set_len(memory_size);
-            std::ptr::copy_nonoverlapping(image_contents.as_mut_ptr(), (memory.as_mut_ptr() as usize + IMAGE_BASE) as *mut u8, image_contents.len())
+            std::ptr::copy_nonoverlapping(image_contents.as_ptr(), (memory.as_mut_ptr() as usize + IMAGE_BASE) as *mut u8, image_contents.len());
+            std::ptr::copy_nonoverlapping(include_bytes!("../target/font.rbmf").as_ptr(), (memory.as_mut_ptr() as usize + BITMAP) as *mut u8, 256*64);
         }
         let registers = [0;54];
+        println!("{}", &registers[REG_F] as *const _ as usize);
         let mut machine = Machine {  
-            screen: Screen::new(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, 4, "Crystal VM"),
+            screen_life: Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, 4, "Crystal VM"),
             memory,
             registers,
             next_device_id: 1,
@@ -75,11 +77,11 @@ impl Machine {
 
     pub(crate) fn execute_next(&mut self) {
         let raw = self.read_word(self.registers[REG_I]);
-        //println!("raw: {raw:032b}");
         let instr = raw >> 21;
         let arg0 = (raw >> 14 & 0b01111111) as u8;
         let arg1 = (raw >> 7 & 0b01111111) as u8;
         let arg2 = (raw & 0b01111111) as u8;
+        //println!("{instr:011b} {arg0:07b} {arg1:07b} {arg2:07b}");
         macro_rules! linear_instr {
             ($logic: expr) => {{
                 $logic;
@@ -145,8 +147,9 @@ impl Machine {
         macro_rules! jump_if {
             (|$a: ident| $cond: expr) => {{
                 let $a = self.registers[REG_F];
+                let dest = self.fetch_data(arg0);
                 if $cond {
-                    self.registers[REG_I] = self.fetch_data(arg0);
+                    self.registers[REG_I] = dest;
                 } else {
                     self.registers[REG_I] += 4;
                 }
@@ -230,8 +233,8 @@ impl Machine {
                 self.set_data(arg0, d)
             }}, // ld
             0b000_10000011 => linear_instr!{{
-                let a = self.fetch_data(arg1);
-                let d = self.fetch_data(arg0);
+                let a = self.fetch_data(arg0);
+                let d = self.fetch_data(arg1);
                 self.write_word(a, d);
             }}, // st
             0b000_10000101 => linear_instr!{{
@@ -240,9 +243,9 @@ impl Machine {
                 self.set_data(arg0, d)
             }}, // ldb
             0b000_10000111 => linear_instr!{{
-                let a = self.fetch_data(arg1);
-                let d = self.fetch_data(arg0);
-                self.write_word(a, d);
+                let a = self.fetch_data(arg0);
+                let d = self.fetch_data(arg1);
+                self.memory[a as usize] = d as u8;
             }}, // stb
             0b000_10001000 => linear_instr!{{
                 self.registers[REG_S] += 4;
@@ -351,7 +354,7 @@ impl Machine {
 impl Drop for Machine {
     fn drop(&mut self) {
         // tell the screen render thread to kill itself and wait for completion
-        self.screen.machine_alive = false;
-        while self.screen.screen_alive {}
+        self.screen_life.lock().unwrap().machine_alive = false;
+        while self.screen_life.lock().unwrap().screen_alive {}
     }
 }

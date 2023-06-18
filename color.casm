@@ -19,17 +19,20 @@
     ret
 
 ~@START
+    or %F 0b00000000_01000000_00000000_00000000 %F
+
     #counter newreg()
-    #screen_char newreg()
+    #color newreg()
     move 0u @counter
-    move @TEXT_BUF_1 @screen_char 
+    move 0u @color 
     #loop $
-        stb @screen_char @counter
-        addu @screen_char 1 @screen_char
+        shl @counter 8 @color
+        or @color 0xff0000ff @color
+        st @counter 0xff0000ff
         addu @counter 1 @counter
-        cmpu @counter 256
-        jnz @loop
+        cmpu @counter @SCREEN_BUF_2
+        jl @loop
     #_ dropreg(counter)
-    #_ dropreg(screen_char)
+    #_ dropreg(color)
     #hlt $
         jmp @hlt

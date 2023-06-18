@@ -133,6 +133,9 @@ def resolve(section):
         if type(instr) == Location:
             instr.here.resolved = section.addr + (c - d) * 4
             d += 1
+        elif type(instr) == list:
+            d -= sum([type(x) != str for x in instr[1:]])
+
 
 for i, line in enumerate(lines):
     line = line.strip()
