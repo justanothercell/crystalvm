@@ -1,6 +1,8 @@
 use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration};
 use std::ops::*;
 
+use crate::screen::Screen;
+
 /// STACK
 pub const REG_S: usize = 48;
 // INSTR PTR
@@ -14,11 +16,35 @@ pub const REG_F: usize = 52;
 // INTERRUPT ID
 pub const REG_Q: usize = 53;
 
+pub const FLAG_BIT_Z: u32 = 0b00000000_00000000_00000000_00000001;
+pub const FLAG_BIT_S: u32 = 0b00000000_00000000_00000000_00000010;
+pub const FLAG_BIT_C: u32 = 0b00000000_00000000_00000000_00000100;
+pub const FLAG_BIT_O: u32 = 0b00000000_00000000_00000000_00001000;
+pub const FLAG_BIT_M: u32 = 0b00000000_00000000_10000000_00000000;
+pub const FLAG_BIT_E: u32 = 0b00000000_01000000_00000000_00000000;
+pub const FLAG_BIT_B: u32 = 0b00000000_10000000_00000000_00000000;
+
+pub const IMAGE_BASE: usize = 0x0008DE00;
+pub const INTERRUPT_HANDLER: usize = 0x0008DE00;
+pub const ENTRYPOINT: usize = 0x0008E000;
+
+pub const SCREEN_BUFFER_1: usize = 0x00000000;
+pub const SCREEN_BUFFER_2: usize = 0x0003E800;
+pub const TEXT_BUFFER_1: usize = 0x0007D000;
+pub const TEXT_BUFFER_2: usize = 0x0007D3E8;
+pub const BITMAP: usize = 0x0007D800;
+
+pub const SCREEN_WIDTH: usize = 320;
+pub const SCREEN_HEIGHT: usize = 200;
+pub const TEXT_WIDTH: usize = 40;
+pub const TEXT_HEIGHT: usize = 25;
+
 pub struct Machine {
     pub(crate) memory: Vec<u8>,
     pub(crate) registers: [u32; 54],
     pub(crate) next_device_id: u32,
     pub(crate) interrupt_wait_counter: u32,
+    pub(crate) screen: Screen
 }
 
 impl Machine {
@@ -27,33 +53,33 @@ impl Machine {
         let img_size = image.stream_len().unwrap() as usize;
         let mut image_contents = Vec::with_capacity(img_size);
         image.read_to_end(&mut image_contents).unwrap();
-        if memory_size < img_size + 0x00087400 {
-            panic!("need at least {:X} memory cells, only got {:X} supplied", img_size + 0x00087400, memory_size)
+        if memory_size < img_size + IMAGE_BASE {
+            panic!("need at least 0x{:X} memory cells, only got 0x{:X} supplied", img_size + IMAGE_BASE, memory_size)
         }
+        let mut memory = Vec::with_capacity(memory_size);
+        unsafe{ 
+            memory.set_len(memory_size);
+            std::ptr::copy_nonoverlapping(image_contents.as_mut_ptr(), (memory.as_mut_ptr() as usize + IMAGE_BASE) as *mut u8, image_contents.len())
+        }
+        let registers = [0;54];
         let mut machine = Machine {  
-            memory: {
-                let mut m = Vec::with_capacity(memory_size);
-                unsafe{ 
-                    m.set_len(memory_size);
-                    std::ptr::copy_nonoverlapping(image_contents.as_mut_ptr(), (m.as_mut_ptr() as usize + 0x00087400) as *mut u8, image_contents.len())
-                }
-                m
-            },
-            registers: [0;54],
+            screen: Screen::new(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, 4, "Crystal VM"),
+            memory,
+            registers,
             next_device_id: 1,
-            interrupt_wait_counter: 0
+            interrupt_wait_counter: 0,
         };
-        machine.registers[REG_I] = 0x088000;
+        machine.registers[REG_I] = ENTRYPOINT as u32;
         machine
     }
 
     pub(crate) fn execute_next(&mut self) {
         let raw = self.read_word(self.registers[REG_I]);
+        //println!("raw: {raw:032b}");
         let instr = raw >> 21;
         let arg0 = (raw >> 14 & 0b01111111) as u8;
         let arg1 = (raw >> 7 & 0b01111111) as u8;
         let arg2 = (raw & 0b01111111) as u8;
-        println!("{instr:011b} {arg0:02X} {arg1:02X} {arg2:02X}");
         macro_rules! linear_instr {
             ($logic: expr) => {{
                 $logic;
@@ -73,20 +99,20 @@ impl Machine {
             ($ty: ident::$fun: ident (a, b) carry bool) => { linear_instr!{ unsafe {
                 let a: $ty = std::mem::transmute(self.fetch_data(arg0));
                 let b: $ty = std::mem::transmute(self.fetch_data(arg1));
-                let carry_in = self.registers[REG_F] & (0b1 << 15) > 0;
+                let carry_in = self.registers[REG_F] & FLAG_BIT_M > 0;
                 let (r, carry) = $ty::$fun(a, b, if carry_in { self.registers[REG_C] & 0b1 > 0 } else { false });
                 self.set_data(arg2, std::mem::transmute(r));
                 self.registers[REG_C] = carry as u32;
-                self.registers[REG_F] = (self.registers[REG_F] & !0b100) | ((carry as u32) << 4);
+                self.registers[REG_F] = (self.registers[REG_F] & !FLAG_BIT_C) | ((carry as u32) * FLAG_BIT_C);
             } }};
             ($ty: ident::$fun: ident (a, b) carry self) => { linear_instr!{ unsafe {
                 let a: $ty = std::mem::transmute(self.fetch_data(arg0));
                 let b: $ty = std::mem::transmute(self.fetch_data(arg1));
-                let carry_in = self.registers[REG_F] & (0b1 << 15) > 0;
+                let carry_in = self.registers[REG_F] & FLAG_BIT_M > 0;
                 let (r, carry) = $ty::$fun(a, b, if carry_in { std::mem::transmute(self.registers[REG_C]) } else { std::mem::transmute(0) });
                 self.set_data(arg2, std::mem::transmute(r));
                 self.registers[REG_C] = std::mem::transmute(carry);
-                self.registers[REG_F] = (self.registers[REG_F] & !0b100) | (((carry != 0) as u32) << 4);
+                self.registers[REG_F] = (self.registers[REG_F] & !FLAG_BIT_C) | (((carry != 0) as u32) * FLAG_BIT_C);
             } }};
             ($ty: ident::$fun: ident (a, b) overflow) => { linear_instr!{ unsafe {
                 let a: $ty = std::mem::transmute(self.fetch_data(arg0));
@@ -94,7 +120,7 @@ impl Machine {
                 let (r, carry) = $ty::$fun(a, b);
                 self.set_data(arg2, std::mem::transmute(r));
                 self.registers[REG_C] = carry as u32;
-                self.registers[REG_F] = (self.registers[REG_F] & !0b100) | ((carry as u32) << 4);
+                self.registers[REG_F] = (self.registers[REG_F] & !FLAG_BIT_C) | ((carry as u32) * FLAG_BIT_C);
             } }};
 
             ($ty: ident |$a: ident| $expr: expr) => { linear_instr!{ unsafe {
@@ -112,9 +138,8 @@ impl Machine {
             ($ty: ident) => { linear_instr!{ unsafe {
                 let a: $ty = std::mem::transmute(self.fetch_data(arg0));
                 let b: $ty = std::mem::transmute(self.fetch_data(arg1));
-                println!("comparing: {a} {b}");
-                self.registers[REG_F] = (self.registers[REG_F] & !0b10000) | (((a == b) as u32) << 0);  // zero/eq
-                self.registers[REG_F] = (self.registers[REG_F] & !0b10000) | (((a < b) as u32) << 1);  // less
+                self.registers[REG_F] = (self.registers[REG_F] & !FLAG_BIT_Z) | (((a == b) as u32) * FLAG_BIT_Z);  // zero/eq
+                self.registers[REG_F] = (self.registers[REG_F] & !FLAG_BIT_S) | (((a < b) as u32) * FLAG_BIT_S);  // less
             } }};
         }
         macro_rules! jump_if {
@@ -178,21 +203,17 @@ impl Machine {
             0b000_00110010 => arith_instr!(f32::cosh(a)), // cosh
             0b000_00110011 => arith_instr!(f32::acosh(a)), // acoh
             0b000_01000000 => jump_if!(|_a| true), // jmp
-            0b000_01000010 => jump_if!(|a| a & 0b0001 != 0), // jz
-            0b000_01000011 => jump_if!(|a| a & 0b0001 == 0), // jnz
-            0b000_01000100 => jump_if!(|a| a & 0b0010 != 0), // jl
-            0b000_01000101 => jump_if!(|a| a & 0b0010 == 0), // jnl
-            0b000_01000110 => jump_if!(|a| a & 0b0100 != 0), // jc
-            0b000_01000111 => jump_if!(|a| a & 0b0100 == 0), // jnc
-            0b000_01001000 => jump_if!(|a| a & 0b1000 != 0), // jo
-            0b000_01001001 => jump_if!(|a| a & 0b1000 == 0), // jno
+            0b000_01000010 => jump_if!(|a| a & FLAG_BIT_Z != 0), // jz
+            0b000_01000011 => jump_if!(|a| a & FLAG_BIT_Z == 0), // jnz
+            0b000_01000100 => jump_if!(|a| a & FLAG_BIT_S != 0), // jl
+            0b000_01000101 => jump_if!(|a| a & FLAG_BIT_S == 0), // jnl
+            0b000_01000110 => jump_if!(|a| a & FLAG_BIT_C != 0), // jc
+            0b000_01000111 => jump_if!(|a| a & FLAG_BIT_C == 0), // jnc
+            0b000_01001000 => jump_if!(|a| a & FLAG_BIT_O != 0), // jo
+            0b000_01001001 => jump_if!(|a| a & FLAG_BIT_O == 0), // jno
             0b000_01010000 => linear_instr!{{
                 let fun = self.fetch_data(arg0);
-                self.write_word(self.registers[REG_S] + 4, self.registers[REG_L]);
-                self.write_word(self.registers[REG_S] + 8, self.registers[REG_I] + 4);
-                self.registers[REG_I] = fun;
-                self.registers[REG_L] = self.registers[REG_S];
-                self.registers[REG_S] += 8;
+                self.call(fun);
             }}, // call
             0b000_01010001 => linear_instr!{{
                 self.registers[REG_S] = self.registers[REG_L];
@@ -208,16 +229,21 @@ impl Machine {
                 let d = self.read_word(a);
                 self.set_data(arg0, d)
             }}, // ld
-            0b000_10000010 => linear_instr!{{
-                self.registers[REG_I] += 4;
-                let d = self.read_word(self.registers[REG_I]);
-                self.set_data(arg0, d)
-            }}, // ldl
             0b000_10000011 => linear_instr!{{
                 let a = self.fetch_data(arg1);
                 let d = self.fetch_data(arg0);
                 self.write_word(a, d);
             }}, // st
+            0b000_10000101 => linear_instr!{{
+                let a = self.fetch_data(arg1);
+                let d = self.memory[a as usize] as u32;
+                self.set_data(arg0, d)
+            }}, // ldb
+            0b000_10000111 => linear_instr!{{
+                let a = self.fetch_data(arg1);
+                let d = self.fetch_data(arg0);
+                self.write_word(a, d);
+            }}, // stb
             0b000_10001000 => linear_instr!{{
                 self.registers[REG_S] += 4;
                 self.memory[self.registers[REG_S] as usize] = self.memory[self.registers[REG_S] as usize - 4];
@@ -268,9 +294,13 @@ impl Machine {
 
     #[inline]
     fn fetch_data(&mut self, reglike: u8) -> u32{
-        if reglike & 0b01000000 > 0 {
+        if reglike == 0b01111111 {
+            self.registers[REG_I] += 4;
+            self.read_word(self.registers[REG_I])
+        }
+        else if reglike & 0b01000000 > 0 {
             self.registers[REG_S] -= 4;
-            self.read_word(self.registers[REG_S]+ 1)
+            self.read_word(self.registers[REG_S] + 4)
         } else {
             self.registers[reglike as usize]
         }
@@ -281,18 +311,19 @@ impl Machine {
         if reglike & 0b01000000 > 0 {
             self.registers[REG_S] += 4;
             self.write_word(self.registers[REG_S], data)
-        }else {
+        } else {
             self.registers[reglike as usize] = data
         }
     }
 
     #[inline]
-    fn read_word(&mut self, addr: u32) -> u32 {
-        unsafe { 
+    fn read_word(&self, addr: u32) -> u32 {
+        let m = unsafe { 
             let mut r = 0u32;
             std::ptr::copy_nonoverlapping((self.memory.as_ptr() as usize + addr as usize) as *const u8,  &mut r as *mut u32 as *mut _, std::mem::size_of::<u32>());
             r.swap_bytes()
-        }
+        };
+        m
     }
 
     #[inline]
@@ -301,8 +332,26 @@ impl Machine {
             std::ptr::copy_nonoverlapping(&data.swap_bytes() as *const u32 as _, (self.memory.as_mut_ptr() as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>())
         }
     }
+
+    #[inline]
+    fn call(&mut self, fun: u32) {
+        self.write_word(self.registers[REG_S] + 4, self.registers[REG_L]);
+        self.write_word(self.registers[REG_S] + 8, self.registers[REG_I] + 4);
+        self.registers[REG_I] = fun;
+        self.registers[REG_L] = self.registers[REG_S];
+        self.registers[REG_S] += 8;
+    }
     
     fn trigger_interrupt(&mut self, iid: u32) {
-        self.registers[REG_Q] = iid
+        self.registers[REG_Q] = iid;
+        self.call(INTERRUPT_HANDLER as u32);
+    }
+}
+
+impl Drop for Machine {
+    fn drop(&mut self) {
+        // tell the screen render thread to kill itself and wait for completion
+        self.screen.machine_alive = false;
+        while self.screen.screen_alive {}
     }
 }

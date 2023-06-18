@@ -1,9 +1,10 @@
 import sys
 import re
+import struct
 
 from instructions_map import instr_to_bits
 
-start_addr = 0x087400
+start_addr = 0x0008DE00
 
 if len(sys.argv) != 3:
     print('usage: assepbler.py <in.casm> <out.cstl>')
@@ -164,15 +165,27 @@ for i, line in enumerate(lines):
         current_section.instructions.append(cmd)
         for a in args[1:]:
             r = eval_var(a, line=i)
-            if type(r) == str:
-                cmd.append(r)
-            else:
-                current_section.instructions.append(r)
+            cmd.append(r)
 
 resolve(current_section)
 
 sections = sorted(sections, key=lambda s: s.addr.value)
 
+
+def write_num(file, num) -> bool:
+    if type(num) == int:
+        file.write(num.to_bytes(4, 'big'))
+        return True
+    elif type(num) == uint:
+        file.write(num.value.to_bytes(4, 'big'))
+        return True
+    elif type(num) == Here:
+        file.write((num.resolved + num.offset).value.to_bytes(4, 'big'))
+        return True
+    elif type(num) == float:
+        file.write(struct.pack('f', num))
+        return True
+    return False
 
 
 with open(outfile, 'wb') as outbin:
@@ -191,26 +204,28 @@ with open(outfile, 'wb') as outbin:
             elif type(instr) == list:
                 cmd = instr[0]
                 b = instr_to_bits(cmd)
+                nums = []
                 for arg in instr[1:]:
-                    if arg == '!':
-                        b += '1000000'
-                    elif arg[0] == '%' and arg[1:].isnumeric():
-                        n = int(arg[1:], base=16)
-                        if n > 48:
-                            raise Exception(f'invalid trg num "{arg}"')
-                        b += '0' + f'{n:06b}'
-                    elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F', 'Q']:
-                        n = ['S', 'I', 'L', 'C', 'F', 'Q'].index(arg[1]) + 48
-                        b += '0' + f'{n:06b}'
+                    if type(arg) == str:
+                        if arg == '!':
+                            b += '1000000'
+                        elif arg[0] == '%' and arg[1:].isnumeric():
+                            n = int(arg[1:], base=16)
+                            if n > 48:
+                                raise Exception(f'invalid trg num "{arg}"')
+                            b += '0' + f'{n:06b}'
+                        elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F', 'Q']:
+                            n = ['S', 'I', 'L', 'C', 'F', 'Q'].index(arg[1]) + 48
+                            b += '0' + f'{n:06b}'
+                        else:
+                            raise Exception(f'invalid arg "{arg}"')
                     else:
-                        raise Exception(f'invalid arg "{arg}"')
+                        b += '1111111'
+                        nums.append(arg)
                 b += '0' * (32-len(b))
                 outbin.write(bytes(int(b, base=2).to_bytes(4, 'big')))
-            elif type(instr) == int:
-                outbin.write(instr.to_bytes(4, 'big'))
-            elif type(instr) == uint:
-                outbin.write(instr.value.to_bytes(4, 'big'))
-            elif type(instr) == Here:
-                outbin.write((instr.resolved + instr.offset).value.to_bytes(4, 'big'))
-            else:
+                for num in nums:
+                    if not write_num(outbin, num):
+                        raise Exception(f'invalid argument "{num}" of type {type(instr)} for {" ".join(instr)}')
+            elif not write_num(outbin, instr):
                 raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')

@@ -25,7 +25,7 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 32 bit
  00000000111111110000000011111111
          ^^      ^           ^^^^
-         SB      M           OCSZ
+         EB      M           OCSZ
 Z: Zero/Equal Flag         (jz/jnz)
 S: Sign Flag (1: negative) (jl/lnl)
 C: Carry Flag              (jc/jnc)
@@ -33,24 +33,53 @@ O: Overflow Flag           (jo/jno)
 M: Carry In
 
 
-S: Screen Mode (0: text, 1: video)
 B: Actve buffer (0: buffer 1, 1: buffer 2)
+E: Screen Mode (0: text, 1: video)
 ```
 
 ## Memory layout
-```
-0x00000000-0x0003e7ff screen buffer 1    (256000 / 0x03e800)
-0x0003e800-0x0007cfff screen buffer 2    (256000 / 0x03e800)
-0x0007d000-0x0007df9f text buffer 1      (  4000 / 0x000fa0)
-0x0007dfa0-0x0007dfff alignment space    (    96 / 0x000060)
-0x0007e000-0x0007ef9f text buffer 2      (  4000 / 0x000fa0)
-0x0007efa0-0x0007efff alignment space    (    96 / 0x000060)
-0x0007f000-0x00086fff stack              ( 32768 / 0x008000)
-0x00087000-0x000873ff ascii font bitmask (  1024 / 0x000400)
-0x00087400-0x00087fff interrupt handler  (  3072 / 0x000C00)
-0x00088000 program start
+```py
+from math import ceil
+def pad(x, p=2):
+    return int(ceil(x / 16**p) * 16**p - x)
 
-=> images start at address 0x00087400
+sections = [
+    ('screen buffer 1', 320 * 200 * 4),
+    ('screen buffer 2', 320 * 200 * 4),
+    ('text buffer 1', 40 * 25),
+    ('padding', pad(40 * 25)),
+    ('text buffer 2', 40 * 25),
+    ('padding', pad(40 * 25)),
+    ('font bitmask', 256 * 8*8),
+    ('stack', pad(256 * 8*8, p=4) + 0x600),
+    ('interrupt handler', 0x200)
+]
+
+def pfmt():
+    pos = 0 
+    for section in sections:
+        ppos = pos
+        pos += section[1]
+        print(f'0x{ppos:08X}-0x{pos-1:08X} {section[0]:20} ({section[1]:6} / 0x{section[1]:06X})')
+    print(f'0x{pos:08X}            program start')
+    print()
+    print(f'=> images start at address 0x{ppos:08X}')
+
+pfmt()
+```
+```
+0x00000000-0x0003E7FF screen buffer 1      (256000 / 0x03E800)
+0x0003E800-0x0007CFFF screen buffer 2      (256000 / 0x03E800)
+0x0007D000-0x0007D3E7 text buffer 1        (  1000 / 0x0003E8)
+0x0007D3E8-0x0007D3FF padding              (    24 / 0x000018)
+0x0007D400-0x0007D7E7 text buffer 2        (  1000 / 0x0003E8)
+0x0007D7E8-0x0007D7FF padding              (    24 / 0x000018)
+0x0007D800-0x000817FF font bitmask         ( 16384 / 0x004000)
+0x00081800-0x0008DDFF stack                ( 50688 / 0x00C600) (12672 / 0x3180 stack elements)
+0x0008DE00-0x0008DFFF interrupt handler    (   512 / 0x000200) (  128 / 0x0080 instructions)
+0x0008E000            program start
+
+=> images start at address 0x0008DE00
 ```
 
 ## Instructions
@@ -185,8 +214,9 @@ The carry register contains the over/underflow of the operation
 |-------------|-------|------|------|------|-------------------------------------------|
 | `100 00000` | move  | src  | dst  | ---  | move src to dest, popping if src is stack |
 | `100 00001` | ld    | dst  | src  | ---  | set dst to memory @src                    |
-| `100 00010` | ldl   | dst  | ---  | ---  | set dst to next value in memory after I   |
 | `100 00011` | st    | src  | dst  | ---  | set memory @dst to src                    |
+| `100 00101` | ldb   | src  | dst  | ---  | set dst to memory @sr (1 byte)            |
+| `100 00111` | stb   | src  | dst  | ---  | set memory @dst to src (1 byte)           |
 | `100 01000` | dup   | ---  | ---  | ---  | duplicate topmost stack elem              |
 | `100 01001` | over  | ---  | ---  | ---  | dup second to topmost elem                |
 | `100 01010` | srl   | ---  | ---  | ---  | rotates the top 3 elems left: ABC -> BCA  |

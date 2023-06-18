@@ -1,15 +1,15 @@
 #SCREEN_BUF_1 0x00000000
-#SCREEN_BUF_2 0x0000fa00
-#TEXT_BUF_1 0x0001f400
-#TEXT_BUF_2 0x0001f800
+#SCREEN_BUF_2 0x0003E800
+#TEXT_BUF_1 0x0007D000
+#TEXT_BUF_2 0x0007D3E8
 
 #SCREEN_W 320
 #SCREEN_H 200
 #TEXT_W 40
 #TEXT_H 25
 
-#INTERRUPT 0x00087400
-#START 0x00088000
+#INTERRUPT 0x0008DE00
+#START 0x0008E000
 
 #regids [f'%{id:02X}' for id in range(49)]
 #newreg lambda: regids.pop(0)
@@ -24,24 +24,18 @@
     #one newreg()
     #screen_char newreg()
     #loop_reg newreg()
-    ldl @counter 0u
-    ldl @max 255u
-    ldl @one 1u
-    ldl @screen_char @TEXT_BUF_1
-    ldl @loop_reg @loop
+    move 0u @counter
+    move @TEXT_BUF_1 @screen_char 
     #loop $
-        st @screen_char @counter
-        addu @counter @one @counter
-        addu @screen_char @one @screen_char
-        cmpu @counter @max
-        jnz @loop_reg
+        stb @screen_char @counter
+        addu @counter 1 @counter
+        addu @screen_char 1 @screen_char
+        cmpu @counter 256
+        jnz @loop
     #_ dropreg(counter)
-    #_ dropreg(max)
-    #_ dropreg(one)
     #_ dropreg(screen_char)
     #_ dropreg(loop_reg)
     #hlt_reg newreg()
-    ldl @hlt_reg @hlt
     #hlt $
-        jmp @hlt_reg
+        jmp @hlt
     #_ dropreg(hlt_reg)
