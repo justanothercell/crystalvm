@@ -199,6 +199,7 @@ with open(outfile, 'wb') as outbin:
         outbin.write(bytes(section.addr.value-last_addr-4))
         last_addr = section.addr.value
         for instr in section.instructions:
+            print(instr)
             if type(instr) == Variable:
                 instr = vars[instr.name]
             if type(instr) == Location:
