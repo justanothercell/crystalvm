@@ -11,3 +11,5 @@
 *.pdb
 
 **/__pycache__/**
+
+**/PROFILE_DIR/**
