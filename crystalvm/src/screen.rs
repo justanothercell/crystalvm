@@ -22,7 +22,6 @@ pub(crate) struct ScreenLifetime {
 
 impl Screen {
     pub(crate) fn create(mem_ptr: usize, flag_reg_ptr: usize, scale: usize, title: &'static str) -> Arc<Mutex<ScreenLifetime>> {
-        println!("-{}->{}", flag_reg_ptr, unsafe { &*(flag_reg_ptr as *mut u32) });
         let life = Arc::new(Mutex::new(ScreenLifetime {
             machine_alive: true,
             screen_alive: true,
@@ -46,8 +45,6 @@ impl Screen {
             window.end();
             window.show();
 
-            println!("X{}->{}", flag_reg_ptr, unsafe { &*(flag_reg_ptr as *mut u32) });
-
             let mut pixels = {
                 let pixel_width = window.pixel_w() as u32;
                 let pixel_height = window.pixel_h() as u32;
@@ -55,16 +52,13 @@ impl Screen {
         
                 Pixels::new(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32, surface_texture).unwrap()
             };
-            println!("A{}->{}", flag_reg_ptr, unsafe { &*(flag_reg_ptr as *mut u32) });
             while app.wait() {
                 if !life.lock().unwrap().machine_alive {
                     life.lock().unwrap().screen_alive = false;
                     app.quit();
                     return;
                 }
-                println!("B{}->{}", flag_reg_ptr, unsafe { &*(flag_reg_ptr as *mut u32) });
                 screen.render(pixels.frame_mut());
-                println!("C{}->{}", flag_reg_ptr, unsafe { &*(flag_reg_ptr as *mut u32) });
                 if let Err(err) = pixels.render() {
                     app.quit();
                     panic!("{err}");
@@ -80,9 +74,6 @@ impl Screen {
     }
 
     fn render(&mut self, pix: &mut [u8]) {
-        println!("{}", &self.flag_reg as *const _ as usize);
-        println!("{}", self.flag_reg as *const _ as usize);
-        println!("{}", self.flag_reg);
         if self.flag_reg & FLAG_BIT_E > 0 {
             self.render_screen(pix)
         } else {

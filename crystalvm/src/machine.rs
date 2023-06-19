@@ -1,4 +1,4 @@
-use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration, sync::{Arc, Mutex}};
+use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration, sync::{Arc, Mutex}, pin::Pin};
 use std::ops::*;
 
 use crate::screen::{Screen, ScreenLifetime};
@@ -40,8 +40,8 @@ pub const TEXT_WIDTH: usize = 40;
 pub const TEXT_HEIGHT: usize = 25;
 
 pub struct Machine {
-    pub(crate) memory: Vec<u8>,
-    pub(crate) registers: [u32; 54],
+    pub(crate) memory: Box<Vec<u8>>,
+    pub(crate) registers: Box<[u32; 54]>,
     pub(crate) next_device_id: u32,
     pub(crate) interrupt_wait_counter: u32,
     pub(crate) screen_life: Arc<Mutex<ScreenLifetime>>
@@ -56,14 +56,13 @@ impl Machine {
         if memory_size < img_size + IMAGE_BASE {
             panic!("need at least 0x{:X} memory cells, only got 0x{:X} supplied", img_size + IMAGE_BASE, memory_size)
         }
-        let mut memory = Vec::with_capacity(memory_size);
+        let mut memory = Box::new(Vec::with_capacity(memory_size));
         unsafe{ 
             memory.set_len(memory_size);
             std::ptr::copy_nonoverlapping(image_contents.as_ptr(), (memory.as_mut_ptr() as usize + IMAGE_BASE) as *mut u8, image_contents.len());
             std::ptr::copy_nonoverlapping(include_bytes!("../target/font.rbmf").as_ptr(), (memory.as_mut_ptr() as usize + BITMAP) as *mut u8, 256*64);
         }
-        let registers = [0;54];
-        println!("{}", &registers[REG_F] as *const _ as usize);
+        let registers = Box::new([0;54]);
         let mut machine = Machine {  
             screen_life: Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, 4, "Crystal VM"),
             memory,

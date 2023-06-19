@@ -27,9 +27,9 @@
     move 0u @color 
     #loop $
         shl @counter 8 @color
-        or @color 0xff0000ff @color
-        st @counter 0xff0000ff
-        addu @counter 1 @counter
+        or @color 0xFFFF0000 @color
+        st @counter @counter
+        addu @counter 4 @counter
         cmpu @counter @SCREEN_BUF_2
         jl @loop
     #_ dropreg(counter)
