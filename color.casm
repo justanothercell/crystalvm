@@ -25,14 +25,17 @@
     #color newreg()
     move 0u @counter
     move 0u @color 
+    move 0u @pixel
     #loop $
         shl @counter 8 @color
-        or @color 0xFFFF0000 @color
-        st @counter @counter
+        or @color 0xFF @color
+        st @pixel @color
+        addu @counter 4 @counter
         addu @counter 4 @counter
         cmpu @counter @SCREEN_BUF_2
         jl @loop
     #_ dropreg(counter)
     #_ dropreg(color)
+    #_ dropreg(pixel)
     #hlt $
         jmp @hlt

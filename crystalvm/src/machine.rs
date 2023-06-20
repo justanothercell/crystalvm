@@ -344,6 +344,7 @@ impl Machine {
         self.registers[REG_S] += 8;
     }
     
+    #[inline]
     fn trigger_interrupt(&mut self, iid: u32) {
         self.registers[REG_Q] = iid;
         self.call(INTERRUPT_HANDLER as u32);

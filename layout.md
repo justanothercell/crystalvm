@@ -18,7 +18,7 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 (points to base of current stack frame) 
 - carry register (C, reg 0x33 / 51)
 - flag register (F, reg 0x34 / 52)
-- interrupt id (Q, reg 0x35 / 53)
+- interrupt info (Q, reg 0x35 / 53)
 
 ### Flag Register
 ```
@@ -226,12 +226,23 @@ The carry register contains the over/underflow of the operation
 | `100 01110` | pshar | ---  | ---  | ---  | push all regs in order onto stack         |
 | `100 01111` | resar | ---  | ---  | ---  | restore all regs to values from stack     |
 
-### I/O and System
-#### System
-| `ABC DE FGH` | casm  | arg0   | arg1 | arg2 | notes                                     |
-|--------------|-------|--------|------|------|-------------------------------------------|
-| `111 00 000` | sleep | millis | ---  | ---  | sleep the specified amout of milliseconds |
-| `111 00 001` | wait  | cycles | ---  | ---  | wait n instr cycles, then interrupt with id 0. 'wait 0' cancels a wait |
-| `111 00 002` | dinfo | id     | dst  | ---  | writes device info to *dst                |
+## Interrupts and System
+| `ABC DE FGH` | casm   | arg0   | arg1  | arg2 | notes                                                               |
+|--------------|--------|--------|-------|------|---------------------------------------------------------------------|
+| `111 00 000` | time   | millis | ---   | ---  | sleep the specified amout of milliseconds                           |
+| `111 00 001` | wait   | c      | ---   | ---  | wait c instr cycles, then interrupt with id 0. c = 0 cancels        |
+| `111 01 001` | dread  | did    | start | len  | reads len bytes to mem starting at start from device. len=0 cancels |
+| `111 01 010` | dwrite | did    | start | len  | writes len bytes starting at start to device. len=0 cancels         |
+| `111 01 010` | dquery | did    | addr  | ---  | writes @addr: read_left, write_left                                 |
 
-## Interrupts
+### Interrupts/Devices
+A device can trigger the following events:
+- connected: the device was connected
+- disconnected: the device was disconnected
+- read_complete: the read buffer read completely
+- write_complete: the write buffer was filled
+
+On an interrupt % is filled set to the device id and interrupt type.
+interrupt type is the topmost 4 bits and device id is the remaining bits.
+
+As device id gets incremented with every device attaching, this results in a maximum of 268435455 device attachments (28 bits)

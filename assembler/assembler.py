@@ -104,6 +104,37 @@ class Variable:
     def __repr__(self) -> str:
         return f'Variable({self.name})'
 
+class Literal:
+    def __init__(self, ty, value):
+        self.type = ty
+        if self.type == 'byte':
+            self.value = eval_var(value)
+        elif self.type == 'word':
+            self.value = eval_var(value)
+        elif self.type == 'ascii':
+            self.value = eval(value)
+        else:
+            raise Exception(f'Invalid type for literal: {self.type}')
+    
+    def __repr__(self) -> str:
+        return f'Literal({self.value}: {self.type})'
+    
+    def __len__(self) -> int:
+        if self.type == 'byte':
+            return 1
+        if self.type == 'word':
+            return 4
+        if self.type == 'ascii':
+            return len(self.value)
+    
+    def write_to(self, file):
+        if self.type == 'byte':
+            write_value(file, self.value, bytes_len=1)
+        elif self.type == 'word':
+            write_value(file, self.value)
+        elif self.type == 'ascii':
+            file.write(self.value.encode('utf-8'))
+
 def eval_var(var: str, line=-1):
     var = var.strip()
     if var == '!':
@@ -131,18 +162,24 @@ def resolve(section):
     d = 0
     for c, instr in enumerate(section.instructions):
         if type(instr) == Location:
-            instr.here.resolved = section.addr + (c - d) * 4
-            d += 1
+            instr.here.resolved = section.addr + c * 4 + d   
+            d -= 4
         elif type(instr) == list:
-            d -= sum([type(x) != str for x in instr[1:]])
-
+            d += sum([type(x) != str for x in instr[1:]]) * 4
+        elif type(instr) == Literal:
+            d += len(instr)
+        else:
+            raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')
 
 for i, line in enumerate(lines):
     line = line.strip()
     if len(line) == 0 or line.startswith(';'):
         continue
+    if line[0] == ';':
+        # comment
+        pass
     if line[0] == '#':
-        name, expr = line[1:].split(' ', 1)
+        name, expr = line[1:].strip().split(' ', 1)
         expr = expr.replace('$', 'Here()')
         for match in re.findall(r'0[xX][0-9A-Fa-f]+|0[oO][0-7]+|0[bB][01]+', expr):
             expr = expr.replace(match, str(eval_var(match)))
@@ -153,37 +190,45 @@ for i, line in enumerate(lines):
         except Exception as e:
             error(e, i)
     elif line[0] == '~':
-        addr = eval_var(line[1:], line=i)
+        resolve(current_section)
+        addr = eval_var(line[1:].strip(), line=i)
+        if type(addr) == Here:
+            if addr.resolved is not None:
+                addr = addr.resolved + addr.offset
         if type(addr) != uint:
             error(f'section has to be resolved to an uint: {addr}', i)
         if addr.value < start_addr:
             error(f'no sections before {start_addr:X} allowed: {addr}', i)
         section = Section(addr)
         sections.append(section)
-        resolve(current_section)
         current_section = section
+    elif line[0] == '.':
+        ty, expr = line[1:].strip().split(' ', 1)
+        current_section.instructions.append(Literal(ty, expr))
     else:
         args = line.split()
         cmd = [args[0]]
         current_section.instructions.append(cmd)
         for a in args[1:]:
-            r = eval_var(a, line=i)
-            cmd.append(r)
+            a = a.strip()
+            if len(a) > 0:
+                r = eval_var(a, line=i)
+                cmd.append(r)
 
 resolve(current_section)
 
 sections = sorted(sections, key=lambda s: s.addr.value)
 
 
-def write_num(file, num) -> bool:
+def write_value(file, num, bytes_len=4) -> bool:
     if type(num) == int:
-        file.write(num.to_bytes(4, 'big'))
+        file.write(num.to_bytes(bytes_len, 'big'))
         return True
     elif type(num) == uint:
-        file.write(num.value.to_bytes(4, 'big'))
+        file.write(num.value.to_bytes(bytes_len, 'big'))
         return True
     elif type(num) == Here:
-        file.write((num.resolved + num.offset).value.to_bytes(4, 'big'))
+        file.write((num.resolved + num.offset).value.to_bytes(bytes_len, 'big'))
         return True
     elif type(num) == float:
         file.write(struct.pack('f', num))
@@ -194,7 +239,7 @@ def write_num(file, num) -> bool:
 with open(outfile, 'wb') as outbin:
     last_addr = start_addr-4
     for section in sections:
-        if section.addr.value <= last_addr:
+        if section.addr.value - 4 < last_addr:
             raise Exception(f'Invalid location {section.addr.value:08X}, already are at {last_addr:08X}')
         outbin.write(bytes(section.addr.value-last_addr-4))
         last_addr = section.addr.value
@@ -202,9 +247,11 @@ with open(outfile, 'wb') as outbin:
             print(instr)
             if type(instr) == Variable:
                 instr = vars[instr.name]
-            if type(instr) == Location:
+            elif type(instr) == Location:
                 # marker
                 pass
+            elif type(instr) == Literal:
+                instr.write_to(outbin)
             elif type(instr) == list:
                 cmd = instr[0]
                 b = instr_to_bits(cmd)
@@ -229,7 +276,7 @@ with open(outfile, 'wb') as outbin:
                 b += '0' * (32-len(b))
                 outbin.write(bytes(int(b, base=2).to_bytes(4, 'big')))
                 for num in nums:
-                    if not write_num(outbin, num):
-                        raise Exception(f'invalid argument "{num}" of type {type(instr)} for {" ".join(instr)}')
-            elif not write_num(outbin, instr):
+                    if not write_value(outbin, num):
+                        raise Exception(f'invalid argument "{num}" of type {type(instr)} for {" ".join([str(i) for i in instr])}')
+            else:
                 raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')

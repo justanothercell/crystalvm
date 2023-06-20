@@ -1,0 +1,101 @@
+#SCREEN_BUF_1 0x00000000
+#SCREEN_BUF_2 0x0003E800
+#TEXT_BUF_1 0x0007D000
+#TEXT_BUF_2 0x0007D3E8
+
+#SCREEN_W 320
+#SCREEN_H 200
+#TEXT_W 40
+#TEXT_H 25
+
+#INTERRUPT 0x0008DE00
+#START 0x0008E000
+
+#regids [f'%{id:02X}' for id in range(49)]
+#newreg lambda: regids.pop(0)
+#dropreg lambda x: (regids.append(x), regids.sort())
+
+~@INTERRUPT
+    cmpu %Q 0
+    jnz @handle
+    ret
+    #handle $
+        pshar
+
+        #event_ty newreg()
+        #device_id newreg()
+        and %Q 0b00001111_11111111_11111111_11111111 @device_id
+        and %Q 0b11110000_00000000_00000000_00000000 @event_ty
+        
+        cmpu @keyboard_id 0
+        jnz @KEYBOARD_STR
+
+
+    #finish_handling $
+        resar
+        ret
+    #_ dropreg(event_ty)
+    #_ dropreg(device_id)
+
+~@START
+    #counter newreg()
+    #screen_char newreg()
+    move 0u @counter
+    move @TEXT_BUF_1 @screen_char 
+    #loop $
+        stb @screen_char @counter
+        addu @screen_char 1 @screen_char
+        addu @counter 1 @counter
+        cmpu @counter 256
+        jnz @loop
+    #_ dropreg(counter)
+    #_ dropreg(screen_char)
+    #hlt $
+        jmp @hlt
+
+; compares two null terminated strings
+; %20: str1
+; %21: str2
+; sets the Z bit of %F to 0 if equal and 1 if inequal. S bit gets modified.
+; %20 and %21 now point to the strings with an offset of the length of the shorter one plus one
+#STRCMP $
+    #STRCMP_str1 "%20"
+    #STRCMP_str2 "%21"
+    #STRCMP_counter newreg()
+    ; save state of used regs
+    push @STRCMP_counter !
+
+    #STRCMP_loop $
+        ; are the chars at the current pos equal?
+        cmpu @STRCMP_str1 @STRCMP_str2
+        jnz @STRCMP_fail
+
+        ; did str1 (and sine they are equal str2 aswell) have a null char and thus end?
+        cmpu @STRCMP_str1 0u
+        ; increment the str pointers
+        addu @STRCMP_str1 1 @STRCMP_str1
+        addu @STRCMP_str2 1 @STRCMP_str2
+        ; jump if not null (cmpu a few liens above)
+        jnz @STRCMP_loop
+
+    ; strings terminated, success
+    ; restore state of used regs and return
+    push ! @STRCMP_counter 
+    ret
+
+    #STRCMP_fail $
+        ; restore state of used regs and return
+        push ! @STRCMP_counter 
+        ret
+    #_ dropreg(STRCMP_counter)
+
+#HANDLE_KEYBOARD $
+    jmp @finish_handling
+
+
+#DATA $
+    #KEYBOARD_STR $
+    . ascii "keyboard"
+
+    #keyboard_id $
+    . word 0
