@@ -1,3 +1,4 @@
 pub trait Device {
-    fn dinfo(&self) -> [u8; 32];
+    fn write_byte(&mut self) -> u8;
+    fn receive_byte(&mut self) -> u8;
 }

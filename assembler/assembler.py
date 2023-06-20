@@ -235,6 +235,12 @@ def write_value(file, num, bytes_len=4) -> bool:
         return True
     return False
 
+for section in sections:
+    for instr in section.instructions:
+        if type(instr) == list:
+            for i in range(0, len(instr)):
+                if type(instr[i]) == Variable:
+                    instr[i] = vars[instr[i].name]
 
 with open(outfile, 'wb') as outbin:
     last_addr = start_addr-4
@@ -258,9 +264,7 @@ with open(outfile, 'wb') as outbin:
                 nums = []
                 for arg in instr[1:]:
                     if type(arg) == str:
-                        if arg == '!':
-                            b += '1000000'
-                        elif arg[0] == '%' and arg[1:].isnumeric():
+                        if arg[0] == '%' and arg[1:].isnumeric():
                             n = int(arg[1:], base=16)
                             if n > 48:
                                 raise Exception(f'invalid trg num "{arg}"')
@@ -270,6 +274,8 @@ with open(outfile, 'wb') as outbin:
                             b += '0' + f'{n:06b}'
                         else:
                             raise Exception(f'invalid arg "{arg}"')
+                    elif type(arg) == Stack:
+                        b += '1000000'
                     else:
                         b += '1111111'
                         nums.append(arg)

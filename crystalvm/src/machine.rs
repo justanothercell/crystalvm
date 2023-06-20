@@ -1,7 +1,7 @@
-use std::{path::Path, fs::File, io::{Seek, Read}, time::Duration, sync::{Arc, Mutex}, pin::Pin};
+use std::{path::Path, fs::File, io::{Seek, Read}, sync::{Arc, Mutex}, collections::HashMap, hash::BuildHasher};
 use std::ops::*;
 
-use crate::screen::{Screen, ScreenLifetime};
+use crate::{screen::{Screen, ScreenLifetime}, device::Device};
 
 /// STACK
 pub const REG_S: usize = 48;
@@ -40,15 +40,16 @@ pub const TEXT_WIDTH: usize = 40;
 pub const TEXT_HEIGHT: usize = 25;
 
 pub struct Machine {
-    pub(crate) memory: Box<Vec<u8>>,
-    pub(crate) registers: Box<[u32; 54]>,
-    pub(crate) next_device_id: u32,
-    pub(crate) interrupt_wait_counter: u32,
-    pub(crate) screen_life: Arc<Mutex<ScreenLifetime>>
+    memory: Box<Vec<u8>>,
+    registers: Box<[u32; 54]>,
+    next_device_id: u32,
+    interrupt_wait_counter: u32,
+    screen_life: Arc<Mutex<ScreenLifetime>>,
+    devices: DeviceMap
 }
 
 impl Machine {
-    pub fn from_image<P: AsRef<Path>>(path: P, memory_size: usize) -> Self {
+    pub fn from_image<P: AsRef<Path>>(path: P, memory_size: usize, window_title: &'static str, window_scale: usize) -> Self {
         let mut image = File::open(path).unwrap();
         let img_size = image.stream_len().unwrap() as usize;
         let mut image_contents = Vec::with_capacity(img_size);
@@ -64,11 +65,12 @@ impl Machine {
         }
         let registers = Box::new([0;54]);
         let mut machine = Machine {  
-            screen_life: Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, 4, "Crystal VM"),
+            screen_life: Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, window_scale, window_title),
             memory,
             registers,
             next_device_id: 1,
             interrupt_wait_counter: 0,
+            devices: Default::default()
         };
         machine.registers[REG_I] = ENTRYPOINT as u32;
         machine
@@ -255,18 +257,18 @@ impl Machine {
                 self.memory[self.registers[REG_S] as usize] = self.memory[self.registers[REG_S] as usize - 8];
             }}, // over
             0b000_10001010 => linear_instr!{{
-                let a = self.read_word(self.registers[REG_S] - 0);
+                let a = self.read_word(self.registers[REG_S]);
                 let b = self.read_word(self.registers[REG_S] - 4);
                 let c = self.read_word(self.registers[REG_S] - 8);
-                self.write_word(self.registers[REG_S] - 0, b);
+                self.write_word(self.registers[REG_S], b);
                 self.write_word(self.registers[REG_S] - 4, c);
                 self.write_word(self.registers[REG_S] - 8, a);
             }}, // srl
             0b000_10001011 => linear_instr!{{
-                let a = self.read_word(self.registers[REG_S] - 0);
+                let a = self.read_word(self.registers[REG_S]);
                 let b = self.read_word(self.registers[REG_S] - 4);
                 let c = self.read_word(self.registers[REG_S] - 8);
-                self.write_word(self.registers[REG_S] - 0, c);
+                self.write_word(self.registers[REG_S], c);
                 self.write_word(self.registers[REG_S] - 4, a);
                 self.write_word(self.registers[REG_S] - 8, b);
             }}, // srr
@@ -281,8 +283,11 @@ impl Machine {
             }}, // leave
             0b000_10001110 => (), // pshar
             0b000_10001111 => (), // resar
-            0b000_11100000 => linear_instr!(std::thread::sleep(Duration::from_millis(self.fetch_data(arg0) as u64))), // sleep
-            0b000_11100001 => (), // dinfo
+            0b000_11100000 => (), // time
+            0b000_11100001 => (), // wait
+            0b000_11101001 => (), // dread 
+            0b000_11101010 => (), // dwrite 
+            0b000_11101011 => (), // dquery 
             _ => linear_instr!(()),
         }
 
@@ -320,12 +325,11 @@ impl Machine {
 
     #[inline]
     fn read_word(&self, addr: u32) -> u32 {
-        let m = unsafe { 
+        unsafe { 
             let mut r = 0u32;
             std::ptr::copy_nonoverlapping((self.memory.as_ptr() as usize + addr as usize) as *const u8,  &mut r as *mut u32 as *mut _, std::mem::size_of::<u32>());
             r.swap_bytes()
-        };
-        m
+        }
     }
 
     #[inline]
@@ -349,12 +353,75 @@ impl Machine {
         self.registers[REG_Q] = iid;
         self.call(INTERRUPT_HANDLER as u32);
     }
+
+    pub fn attach_device<D: Device + 'static>(&mut self, device: D) -> u32 {
+        let device_id = self.next_device_id;
+        let alive = Arc::new(Mutex::new(true));
+        let thread_alive = alive.clone();
+        std::thread::spawn(|| loop {
+            if !*thread_alive.lock().unwrap() {
+                return;
+            }
+        });
+        self.devices.insert(device_id, AttachedDevice {
+            alive,
+            device: Box::new(device)
+        });
+        self.next_device_id += 1;
+        device_id
+    }
+
+    pub fn remove_device(&mut self, device_id: u32) -> bool {
+        self.devices.remove(&device_id).is_some()
+    }
 }
 
 impl Drop for Machine {
     fn drop(&mut self) {
         // tell the screen render thread to kill itself and wait for completion
+        for device in self.devices.values() {
+            *device.alive.lock().unwrap() = false;
+        }
         self.screen_life.lock().unwrap().machine_alive = false;
         while self.screen_life.lock().unwrap().screen_alive {}
+    }
+}
+
+struct AttachedDevice {
+    alive: Arc<Mutex<bool>>,
+    device: Box<dyn Device>
+}
+
+type DeviceMap = HashMap<u32, AttachedDevice, U32HashBuilder>;
+
+#[derive(Default)]
+pub struct U32HashBuilder;
+
+impl BuildHasher for U32HashBuilder {
+    type Hasher = U32Hash;
+
+    #[inline]
+    fn build_hasher(&self) -> Self::Hasher {
+        U32Hash {
+            state: 0
+        }
+    }
+}
+
+pub struct U32Hash {
+    state: u64,
+}
+
+impl std::hash::Hasher for U32Hash {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.state = (self.state << 8) | (byte as u64);
+        }
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.state
     }
 }

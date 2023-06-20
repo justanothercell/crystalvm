@@ -233,14 +233,14 @@ The carry register contains the over/underflow of the operation
 | `111 00 001` | wait   | c      | ---   | ---  | wait c instr cycles, then interrupt with id 0. c = 0 cancels        |
 | `111 01 001` | dread  | did    | start | len  | reads len bytes to mem starting at start from device. len=0 cancels |
 | `111 01 010` | dwrite | did    | start | len  | writes len bytes starting at start to device. len=0 cancels         |
-| `111 01 010` | dquery | did    | addr  | ---  | writes @addr: read_left, write_left                                 |
+| `111 01 011` | dquery | did    | addr  | ---  | writes @addr: read_left, write_left                                 |
 
 ### Interrupts/Devices
 A device can trigger the following events:
-- connected: the device was connected
-- disconnected: the device was disconnected
-- read_complete: the read buffer read completely
-- write_complete: the write buffer was filled
+- connected: the device was connected             (0000)
+- read_complete: the read buffer read completely  (0001)
+- write_complete: the write buffer was filled     (0010)
+- disconnected: the device was disconnected       (0011)
 
 On an interrupt % is filled set to the device id and interrupt type.
 interrupt type is the topmost 4 bits and device id is the remaining bits.

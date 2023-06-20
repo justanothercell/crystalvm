@@ -21,12 +21,14 @@
 ~@START
     #counter newreg()
     #screen_char newreg()
+    
     move 0u @counter
     move @TEXT_BUF_1 @screen_char 
     #loop $
         stb @screen_char @counter
         addu @screen_char 1 @screen_char
         addu @counter 1 @counter
+        
         cmpu @counter 256
         jnz @loop
     #_ dropreg(counter)

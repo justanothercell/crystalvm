@@ -1,9 +1,9 @@
 use std::{sync::{Mutex, Arc}, process::exit};
 
-use fltk::{window::Window, app::{App, self}, prelude::{WidgetBase, GroupExt, WidgetExt}, enums::Event};
+use fltk::{window::Window, app::{App, self}, prelude::{GroupExt, WidgetExt}};
 use pixels::{Pixels, SurfaceTexture};
 
-use crate::{machine::{SCREEN_WIDTH, SCREEN_HEIGHT, TEXT_WIDTH, TEXT_HEIGHT, SCREEN_BUFFER_1, SCREEN_BUFFER_2, TEXT_BUFFER_1, TEXT_BUFFER_2, BITMAP, FLAG_BIT_E, FLAG_BIT_B}, screen};
+use crate::{machine::{SCREEN_WIDTH, SCREEN_HEIGHT, TEXT_WIDTH, TEXT_HEIGHT, SCREEN_BUFFER_1, SCREEN_BUFFER_2, TEXT_BUFFER_1, TEXT_BUFFER_2, BITMAP, FLAG_BIT_E, FLAG_BIT_B}};
 
 /// Screen uses raw pointers and needs to be handled in the Machine's drop function
 pub(crate) struct Screen {
@@ -109,7 +109,7 @@ impl Screen {
                         let sy = y * 8 + dy;
                         let pi = sy * SCREEN_WIDTH + sx;
                         
-                        pix[pi*4+0] = l;
+                        pix[pi*4] = l;
                         pix[pi*4+1] = l;
                         pix[pi*4+2] = l;
                         pix[pi*4+3] = 255;

@@ -26,10 +26,28 @@
         #device_id newreg()
         and %Q 0b00001111_11111111_11111111_11111111 @device_id
         and %Q 0b11110000_00000000_00000000_00000000 @event_ty
-        
-        cmpu @keyboard_id 0
+
+        cmpu @event_ty 0b0000
+        jz @device_connect
+        cmpu @event_ty 0b0001
+        cmpu @event_ty 0b0010
+        cmpu @event_ty 0b0011
+
+        #device_connect $
+            dread @device_id @STR_16_BUF 16
+            move @STR_16_BUF %20
+            move @KEYBOARD_STR %21
+            call @STRCMP
+            jnz @finish_handling
+
+        #device_disconnect $
+            cmpu @keyboard_id @device_id
         jnz @KEYBOARD_STR
 
+        cmpu @keyboard_id @device_id
+        jnz @KEYBOARD_STR
+
+        move @device_id @keyboard_id
 
     #finish_handling $
         resar
@@ -63,12 +81,12 @@
     #STRCMP_str2 "%21"
     #STRCMP_counter newreg()
     ; save state of used regs
-    push @STRCMP_counter !
+    move @STRCMP_counter !
 
     #STRCMP_loop $
         ; are the chars at the current pos equal?
         cmpu @STRCMP_str1 @STRCMP_str2
-        jnz @STRCMP_fail
+        jnz @STRCMP_end
 
         ; did str1 (and sine they are equal str2 aswell) have a null char and thus end?
         cmpu @STRCMP_str1 0u
@@ -78,24 +96,19 @@
         ; jump if not null (cmpu a few liens above)
         jnz @STRCMP_loop
 
-    ; strings terminated, success
-    ; restore state of used regs and return
-    push ! @STRCMP_counter 
-    ret
-
-    #STRCMP_fail $
+    #STRCMP_end $
         ; restore state of used regs and return
-        push ! @STRCMP_counter 
+        ; %F Z bit should still be set
+        move ! @STRCMP_counter 
         ret
     #_ dropreg(STRCMP_counter)
 
-#HANDLE_KEYBOARD $
-    jmp @finish_handling
-
-
 #DATA $
+    #STR_16_BUF $
+    . ascii "\0"*16
+
     #KEYBOARD_STR $
-    . ascii "keyboard"
+    . ascii "keyboard\0"
 
     #keyboard_id $
     . word 0

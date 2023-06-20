@@ -23,16 +23,33 @@
 
     #counter newreg()
     #color newreg()
+    #pixel newreg()
+    #temp newreg()
     move 0u @counter
     move 0u @color 
     move 0u @pixel
     #loop $
-        shl @counter 8 @color
+        modu @counter @SCREEN_W @temp
+        modu @temp 0xFF @temp
+        shl @temp 16 @color
+        divu @counter @SCREEN_W @temp
+        shl @temp 8 @temp
+        or @temp @color @color
         or @color 0xFF @color
         st @pixel @color
-        addu @counter 4 @counter
-        addu @counter 4 @counter
-        cmpu @counter @SCREEN_BUF_2
+
+        addu @counter 1 @counter
+        addu @pixel 4 @pixel
+
+        #idle_c newreg()
+        move 0u @idle_c
+        #idle $
+            addu @idle_c 1 @idle_c
+            cmpu @idle_c 0xFF
+            jnz @idle
+        #_ dropreg(idle_c)
+
+        cmpu @pixel @SCREEN_BUF_2
         jl @loop
     #_ dropreg(counter)
     #_ dropreg(color)
