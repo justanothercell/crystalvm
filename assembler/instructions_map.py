@@ -77,7 +77,7 @@ def instr_to_bits(instr: str):
         case 'wait':   return '00011100001'
         case 'dread':  return '00011101001'
         case 'dwrite': return '00011101010'
-        case 'dquery': return '00011101011'
+        case 'dstate': return '00011101011'
         case x: raise Exception(f'invalid instruction "{x}"')
 
 def bits_to_instr(bits: str):
@@ -159,5 +159,5 @@ def bits_to_instr(bits: str):
         case '00011100001': return 'wait'
         case '00011101001': return 'dread' 
         case '00011101010': return 'dwrite' 
-        case '00011101011': return 'dquery' 
+        case '00011101011': return 'dstate' 
         case x: raise Exception(f'invalid instruction "{x}"')

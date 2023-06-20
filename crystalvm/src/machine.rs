@@ -1,7 +1,7 @@
-use std::{path::Path, fs::File, io::{Seek, Read}, sync::{Arc, Mutex}, collections::HashMap, hash::BuildHasher};
+use std::{path::Path, fs::File, io::{Seek, Read}, sync::{Arc, Mutex, RwLock}, collections::HashMap, hash::BuildHasher};
 use std::ops::*;
 
-use crate::{screen::{Screen, ScreenLifetime}, device::Device};
+use crate::{screen::{Screen, ScreenLifetime}, device::{Device, self}};
 
 /// STACK
 pub const REG_S: usize = 48;
@@ -281,13 +281,39 @@ impl Machine {
                 self.registers[REG_L] = self.read_word(self.registers[REG_S]);
                 self.registers[REG_S] -= 4;
             }}, // leave
-            0b000_10001110 => (), // pshar
-            0b000_10001111 => (), // resar
+            0b000_10001110 => linear_instr!{{
+                for i in 0..self.registers.len() {
+                    self.set_data(0b01111111, self.registers[i])
+                }
+            }}, // pshar
+            0b000_10001111 => linear_instr!{{
+                for i in (0..self.registers.len()).rev() {
+                    self.registers[i] = self.fetch_data(0b01111111);
+                }
+            }}, // resar
             0b000_11100000 => (), // time
             0b000_11100001 => (), // wait
-            0b000_11101001 => (), // dread 
-            0b000_11101010 => (), // dwrite 
-            0b000_11101011 => (), // dquery 
+            0b000_11101001 => linear_instr!{{
+                let did = self.fetch_data(arg0);
+                let ptr = self.fetch_data(arg1);
+                let len = self.fetch_data(arg2);
+                if let Some(device) = self.devices.get(&did) {
+                    let mut write = device.write().unwrap();
+                    write.read_pointer = ptr;
+                    write.read_length = len;
+                }
+            }}, // dread 
+            0b000_11101010 => linear_instr!{{
+                let did = self.fetch_data(arg0);
+                let ptr = self.fetch_data(arg1);
+                let len = self.fetch_data(arg2);
+                if let Some(device) = self.devices.get(&did) {
+                    let mut write = device.write().unwrap();
+                    write.write_pointer = ptr;
+                    write.write_length = len;
+                }
+            }}, // dwrite 
+            0b000_11101011 => (), // dstate 
             _ => linear_instr!(()),
         }
 
@@ -356,23 +382,67 @@ impl Machine {
 
     pub fn attach_device<D: Device + 'static>(&mut self, device: D) -> u32 {
         let device_id = self.next_device_id;
-        let alive = Arc::new(Mutex::new(true));
-        let thread_alive = alive.clone();
-        std::thread::spawn(|| loop {
-            if !*thread_alive.lock().unwrap() {
-                return;
+        let attached_device = Arc::new(RwLock::new(AttachedDevice {
+            alive: true,
+            device: Box::new(device),
+            read_pointer: 0,
+            read_length: 0,
+            write_pointer: 0,
+            write_length: 0,
+            
+        }));
+        let thread_read_device = attached_device.clone();
+        let thread_read_memory_ptr = &self.memory as *const _ as usize;
+        std::thread::spawn(move || {
+            let memory = unsafe { &mut*(thread_read_memory_ptr as *mut Vec<u8>)};
+            loop {
+                let l = {
+                    let read = thread_read_device.read().unwrap();
+                    if !read.alive {
+                        return;
+                    }
+                    read.read_length
+                };
+                if l > 0 {
+                    let mut write = thread_read_device.write().unwrap();
+                    if let Some(b) = write.device.write_byte() {
+                        memory[write.read_pointer as usize] = b;
+                        write.read_pointer += 1;
+                        write.read_length -= 1;
+                    }
+                }
             }
         });
-        self.devices.insert(device_id, AttachedDevice {
-            alive,
-            device: Box::new(device)
+        let thread_write_device = attached_device.clone();
+        let thread_write_memory_ptr = &self.memory as *const _ as usize;
+        std::thread::spawn(move || {
+            let memory = unsafe { &mut*(thread_write_memory_ptr as *mut Vec<u8>)};
+            loop {
+                let l = {
+                    let read = thread_write_device.read().unwrap();
+                    if !read.alive {
+                        return;
+                    }
+                    read.write_length
+                };
+                if l > 0 {
+                    let mut write = thread_write_device.write().unwrap();
+                    let b = memory[write.write_pointer as usize];
+                    write.device.receive_byte(b);
+                    write.write_pointer += 1;
+                    write.write_length -= 1;
+                }
+            }
         });
+        self.devices.insert(device_id, attached_device);
         self.next_device_id += 1;
         device_id
     }
 
     pub fn remove_device(&mut self, device_id: u32) -> bool {
-        self.devices.remove(&device_id).is_some()
+        self.devices.remove(&device_id).map(|device| {
+            device.write().unwrap().alive = false
+        }).is_some()
     }
 }
 
@@ -380,7 +450,7 @@ impl Drop for Machine {
     fn drop(&mut self) {
         // tell the screen render thread to kill itself and wait for completion
         for device in self.devices.values() {
-            *device.alive.lock().unwrap() = false;
+            device.write().unwrap().alive = false;
         }
         self.screen_life.lock().unwrap().machine_alive = false;
         while self.screen_life.lock().unwrap().screen_alive {}
@@ -388,11 +458,18 @@ impl Drop for Machine {
 }
 
 struct AttachedDevice {
-    alive: Arc<Mutex<bool>>,
-    device: Box<dyn Device>
+    alive: bool,
+    device: Box<dyn Device>,
+    read_pointer: u32,
+    read_length: u32,
+    write_pointer: u32,
+    write_length: u32
 }
 
-type DeviceMap = HashMap<u32, AttachedDevice, U32HashBuilder>;
+unsafe impl Send for AttachedDevice {}
+unsafe impl Sync for AttachedDevice {}
+
+type DeviceMap = HashMap<u32, Arc<RwLock<AttachedDevice>>, U32HashBuilder>;
 
 #[derive(Default)]
 pub struct U32HashBuilder;
@@ -407,7 +484,6 @@ impl BuildHasher for U32HashBuilder {
         }
     }
 }
-
 pub struct U32Hash {
     state: u64,
 }

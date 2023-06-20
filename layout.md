@@ -233,7 +233,7 @@ The carry register contains the over/underflow of the operation
 | `111 00 001` | wait   | c      | ---   | ---  | wait c instr cycles, then interrupt with id 0. c = 0 cancels        |
 | `111 01 001` | dread  | did    | start | len  | reads len bytes to mem starting at start from device. len=0 cancels |
 | `111 01 010` | dwrite | did    | start | len  | writes len bytes starting at start to device. len=0 cancels         |
-| `111 01 011` | dquery | did    | addr  | ---  | writes @addr: read_left, write_left                                 |
+| `111 01 011` | dstate | did    | read  | write| returns the read and write bytes left                               |
 
 ### Interrupts/Devices
 A device can trigger the following events:

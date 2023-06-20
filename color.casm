@@ -1,7 +1,7 @@
 #SCREEN_BUF_1 0x00000000
 #SCREEN_BUF_2 0x0003E800
 #TEXT_BUF_1 0x0007D000
-#TEXT_BUF_2 0x0007D3E8
+#TEXT_BUF_2 0x0007D400
 
 #SCREEN_W 320
 #SCREEN_H 200
@@ -40,14 +40,6 @@
 
         addu @counter 1 @counter
         addu @pixel 4 @pixel
-
-        #idle_c newreg()
-        move 0u @idle_c
-        #idle $
-            addu @idle_c 1 @idle_c
-            cmpu @idle_c 0xFF
-            jnz @idle
-        #_ dropreg(idle_c)
 
         cmpu @pixel @SCREEN_BUF_2
         jl @loop
