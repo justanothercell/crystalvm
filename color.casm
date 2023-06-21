@@ -42,6 +42,9 @@
         addu @pixel 4 @pixel
 
         cmpu @pixel @SCREEN_BUF_2
+
+        breakpoint "lp"
+
         jl @loop
     #_ dropreg(counter)
     #_ dropreg(color)

@@ -78,6 +78,7 @@ def instr_to_bits(instr: str):
         case 'dread':  return '00011101001'
         case 'dwrite': return '00011101010'
         case 'dstate': return '00011101011'
+        case 'breakpoint': return '11111111111'
         case x: raise Exception(f'invalid instruction "{x}"')
 
 def bits_to_instr(bits: str):
@@ -160,4 +161,5 @@ def bits_to_instr(bits: str):
         case '00011101001': return 'dread' 
         case '00011101010': return 'dwrite' 
         case '00011101011': return 'dstate' 
+        case '11111111111': return 'breakpoint'
         case x: raise Exception(f'invalid instruction "{x}"')

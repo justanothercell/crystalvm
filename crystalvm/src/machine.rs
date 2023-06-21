@@ -1,4 +1,4 @@
-use std::{path::Path, fs::File, io::{Seek, Read}, sync::{Arc, Mutex, RwLock}, collections::HashMap, hash::BuildHasher};
+use std::{path::Path, fs::File, io::{Seek, Read}, sync::{Arc, Mutex, RwLock}, collections::HashMap, hash::BuildHasher, panic::PanicInfo, rc::Rc};
 use std::ops::*;
 
 use crate::{screen::{Screen, ScreenLifetime}, device::{Device, self}};
@@ -45,7 +45,9 @@ pub struct Machine {
     next_device_id: u32,
     interrupt_wait_counter: u32,
     screen_life: Arc<Mutex<ScreenLifetime>>,
-    devices: DeviceMap
+    devices: DeviceMap,
+
+    default_panic_hook: Arc<Box<dyn for<'a, 'b> std::ops::Fn(&'a PanicInfo<'b>) + Send + Sync>>
 }
 
 impl Machine {
@@ -64,13 +66,23 @@ impl Machine {
             std::ptr::copy_nonoverlapping(include_bytes!("../target/font.rbmf").as_ptr(), (memory.as_mut_ptr() as usize + BITMAP) as *mut u8, 256*64);
         }
         let registers = Box::new([0;54]);
+
+        let prev_hook = Arc::new(std::panic::take_hook());
+        let prev = prev_hook.clone();
+        let reg_ptr = &registers as *const _ as usize;
+        std::panic::set_hook(Box::new(move |info| {
+            println!("Panicked! Registers: {:X?}", unsafe {&*(reg_ptr as *const Box<[u32; 54]>)});
+            prev(info);
+        }));
         let mut machine = Machine {  
             screen_life: Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, window_scale, window_title),
             memory,
             registers,
             next_device_id: 1,
             interrupt_wait_counter: 0,
-            devices: Default::default()
+            devices: Default::default(),
+
+            default_panic_hook: prev_hook
         };
         machine.registers[REG_I] = ENTRYPOINT as u32;
         machine
@@ -291,8 +303,8 @@ impl Machine {
                     self.registers[i] = self.fetch_data(0b01111111);
                 }
             }}, // resar
-            0b000_11100000 => (), // time
-            0b000_11100001 => (), // wait
+            0b000_11100000 => linear_instr!(()), // time
+            0b000_11100001 => linear_instr!(()), // wait
             0b000_11101001 => linear_instr!{{
                 let did = self.fetch_data(arg0);
                 let ptr = self.fetch_data(arg1);
@@ -313,7 +325,8 @@ impl Machine {
                     write.write_length = len;
                 }
             }}, // dwrite 
-            0b000_11101011 => (), // dstate 
+            0b000_11101011 => linear_instr!(()), // dstate 
+            0b111_11111111 => linear_instr!((println!("FOO"))), // breakpoint 
             _ => linear_instr!(()),
         }
 
@@ -454,6 +467,10 @@ impl Drop for Machine {
         }
         self.screen_life.lock().unwrap().machine_alive = false;
         while self.screen_life.lock().unwrap().screen_alive {}
+        if !std::thread::panicking() {
+            let hook = self.default_panic_hook.clone();
+            std::panic::set_hook(Box::new(move |info| hook(info)));
+        }
     }
 }
 

@@ -58,14 +58,18 @@
 ~@START
     #counter newreg()
     #screen_char newreg()
+    
     move 0u @counter
     move @TEXT_BUF_1 @screen_char 
     #loop $
-        stb @screen_char @counter
+        stb @screen_char 65
         addu @screen_char 1 @screen_char
         addu @counter 1 @counter
-        cmpu @counter 256
-        jnz @loop
+        
+        ; cmpu @counter 256
+        stb @TEXT_BUF_1 66
+        jmp @loop
+    stb @TEXT_BUF_1 67
     #_ dropreg(counter)
     #_ dropreg(screen_char)
     #hlt $
@@ -103,7 +107,8 @@
         ret
     #_ dropreg(STRCMP_counter)
 
-#DATA $
+#DATA $ + 16
+~@DATA
     #STR_16_BUF $
     . ascii "\0"*16
 

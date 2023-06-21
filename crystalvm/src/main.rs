@@ -11,7 +11,7 @@ pub mod screen;
 pub mod device;
 
 fn main() {
-    let mut machine = Machine::from_image("../keyboard.cstl", 0x90000, "Crystal VM", 3);
+    let mut machine = Machine::from_image("../color.cstl", 0x90000, "Crystal VM", 3);
     loop {
         machine.execute_next();
     }

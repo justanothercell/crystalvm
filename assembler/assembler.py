@@ -6,11 +6,24 @@ from instructions_map import instr_to_bits
 
 start_addr = 0x0008DE00
 
-if len(sys.argv) != 3:
+if len(sys.argv) < 3:
     print('usage: assepbler.py <in.casm> <out.cstl>')
     exit(1)
 file = sys.argv[1]
 outfile = sys.argv[2]
+
+include_breakpoints = False
+debug_info_file = None
+
+args = sys.argv[3:]
+
+for arg in args:
+    if arg in ['--breakpoints', '-b']:
+        include_breakpoints = True
+    elif arg.startswith('--debug-info-file=') or arg.startswith('-d='):
+        debug_info_file = arg.split('=', maxsplit=1)
+    else:
+        print(f'unhandled argument "{arg}"')
 
 with open(file, 'r') as source_file:
     lines = source_file.readlines()
@@ -112,12 +125,15 @@ class Literal:
         elif self.type == 'word':
             self.value = eval_var(value)
         elif self.type == 'ascii':
-            self.value = eval(value)
+            self.value = eval(value).encode("utf-8")
         else:
             raise Exception(f'Invalid type for literal: {self.type}')
     
     def __repr__(self) -> str:
-        return f'Literal({self.value}: {self.type})'
+        if self.type == 'ascii':
+            return f'Literal({self.value}: {self.type})'
+        else:
+            return f'Literal({self.value}: {self.type})'
     
     def __len__(self) -> int:
         if self.type == 'byte':
@@ -133,7 +149,22 @@ class Literal:
         elif self.type == 'word':
             write_value(file, self.value)
         elif self.type == 'ascii':
-            file.write(self.value.encode('utf-8'))
+            file.write(self.value)
+
+class Instruction:
+    def __init__(self, cmd, args):
+        self.cmd = cmd
+        self.args = args
+
+    def __repr__(self) -> str:
+        return f'{self.cmd} {" ".join([str(arg) for arg in self.args])}'
+
+class Breakpoint:
+    def __init__(self, tag):
+        self.tag=tag
+
+    def __repr__(self) -> str:
+        return f'Breakpoint({self.tag})'
 
 def eval_var(var: str, line=-1):
     var = var.strip()
@@ -164,10 +195,12 @@ def resolve(section):
         if type(instr) == Location:
             instr.here.resolved = section.addr + c * 4 + d   
             d -= 4
-        elif type(instr) == list:
-            d += sum([type(x) != str for x in instr[1:]]) * 4
+        elif type(instr) == Instruction:
+            d += sum([type(x) != str for x in instr.args]) * 4
         elif type(instr) == Literal:
-            d += len(instr)
+            d += len(instr) - 4
+        elif type(instr) == Breakpoint:
+            pass
         else:
             raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')
 
@@ -205,15 +238,23 @@ for i, line in enumerate(lines):
     elif line[0] == '.':
         ty, expr = line[1:].strip().split(' ', 1)
         current_section.instructions.append(Literal(ty, expr))
+    elif line.startswith('breakpoint'):
+        b, *tag = line.split(' ', 1)
+        if include_breakpoints:
+            tag = eval(tag[0], vars) if len(tag) > 0 else ''
+            if len(tag) > 2:
+                error('breakpoint tag is too long, has to be 2 or less chars: "{tag}"', i)
+            current_section.instructions.append(Breakpoint(tag))
     else:
         args = line.split()
-        cmd = [args[0]]
-        current_section.instructions.append(cmd)
+        cmd = args[0]
+        cmd_args = []
         for a in args[1:]:
             a = a.strip()
             if len(a) > 0:
                 r = eval_var(a, line=i)
-                cmd.append(r)
+                cmd_args.append(r)
+        current_section.instructions.append(Instruction(cmd, cmd_args))
 
 resolve(current_section)
 
@@ -237,32 +278,39 @@ def write_value(file, num, bytes_len=4) -> bool:
 
 for section in sections:
     for instr in section.instructions:
-        if type(instr) == list:
-            for i in range(0, len(instr)):
-                if type(instr[i]) == Variable:
-                    instr[i] = vars[instr[i].name]
+        if type(instr) == Instruction:
+            for i in range(0, len(instr.args)):
+                if type(instr.args[i]) == Variable:
+                    instr.args[i] = vars[instr.args[i].name]
 
 with open(outfile, 'wb') as outbin:
-    last_addr = start_addr-4
+    current_addr = start_addr
     for section in sections:
-        if section.addr.value - 4 < last_addr:
-            raise Exception(f'Invalid location {section.addr.value:08X}, already are at {last_addr:08X}')
-        outbin.write(bytes(section.addr.value-last_addr-4))
-        last_addr = section.addr.value
+        print(f'{section.addr.value-current_addr} buffer bytes')
+        if section.addr.value < current_addr:
+            raise Exception(f'Invalid location {section.addr.value:08X}, already are at {current_addr:08X}')
+        outbin.write(bytes(section.addr.value-current_addr))
+        current_addr = section.addr.value
         for instr in section.instructions:
             print(instr)
             if type(instr) == Variable:
                 instr = vars[instr.name]
-            elif type(instr) == Location:
+
+            if type(instr) == Location:
                 # marker
                 pass
             elif type(instr) == Literal:
                 instr.write_to(outbin)
-            elif type(instr) == list:
-                cmd = instr[0]
+                current_addr += len(instr)
+            elif type(instr) == Breakpoint:
+                outbin.write(bytes(int('1111111111100000', base=2).to_bytes(4, 'big')))
+                outbin.write(instr.tag.ljust(2).encode('utf-8'))
+                current_addr += 4
+            elif type(instr) == Instruction:
+                cmd = instr.cmd
                 b = instr_to_bits(cmd)
                 nums = []
-                for arg in instr[1:]:
+                for arg in instr.args:
                     if type(arg) == str:
                         if arg[0] == '%' and arg[1:].isnumeric():
                             n = int(arg[1:], base=16)
@@ -281,7 +329,9 @@ with open(outfile, 'wb') as outbin:
                         nums.append(arg)
                 b += '0' * (32-len(b))
                 outbin.write(bytes(int(b, base=2).to_bytes(4, 'big')))
+                current_addr += 4
                 for num in nums:
+                    current_addr += 4
                     if not write_value(outbin, num):
                         raise Exception(f'invalid argument "{num}" of type {type(instr)} for {" ".join([str(i) for i in instr])}')
             else:
