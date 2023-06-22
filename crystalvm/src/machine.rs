@@ -40,8 +40,8 @@ pub const TEXT_WIDTH: usize = 40;
 pub const TEXT_HEIGHT: usize = 25;
 
 pub struct Machine {
-    memory: Box<Vec<u8>>,
-    registers: Box<[u32; 54]>,
+    pub(crate) memory: Box<Vec<u8>>,
+    pub(crate) registers: Box<[u32; 54]>,
     next_device_id: u32,
     interrupt_wait_counter: u32,
     screen_life: Arc<Mutex<ScreenLifetime>>,
@@ -326,7 +326,7 @@ impl Machine {
                 }
             }}, // dwrite 
             0b000_11101011 => linear_instr!(()), // dstate 
-            0b111_11111111 => linear_instr!((println!("FOO"))), // breakpoint 
+            0b111_11111111 => linear_instr!(()), // breakpoint 
             _ => linear_instr!(()),
         }
 
@@ -339,7 +339,7 @@ impl Machine {
     }
 
     #[inline]
-    fn fetch_data(&mut self, reglike: u8) -> u32{
+    pub(crate) fn fetch_data(&mut self, reglike: u8) -> u32{
         if reglike == 0b01111111 {
             self.registers[REG_I] += 4;
             self.read_word(self.registers[REG_I])
@@ -353,7 +353,7 @@ impl Machine {
     }
 
     #[inline]
-    fn set_data(&mut self, reglike: u8, data: u32) {
+    pub(crate) fn set_data(&mut self, reglike: u8, data: u32) {
         if reglike & 0b01000000 > 0 {
             self.registers[REG_S] += 4;
             self.write_word(self.registers[REG_S], data)
@@ -363,7 +363,7 @@ impl Machine {
     }
 
     #[inline]
-    fn read_word(&self, addr: u32) -> u32 {
+    pub(crate) fn read_word(&self, addr: u32) -> u32 {
         unsafe { 
             let mut r = 0u32;
             std::ptr::copy_nonoverlapping((self.memory.as_ptr() as usize + addr as usize) as *const u8,  &mut r as *mut u32 as *mut _, std::mem::size_of::<u32>());
@@ -372,14 +372,14 @@ impl Machine {
     }
 
     #[inline]
-    fn write_word(&mut self, addr: u32, data: u32) {
+    pub(crate) fn write_word(&mut self, addr: u32, data: u32) {
         unsafe { 
             std::ptr::copy_nonoverlapping(&data.swap_bytes() as *const u32 as _, (self.memory.as_mut_ptr() as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>())
         }
     }
 
     #[inline]
-    fn call(&mut self, fun: u32) {
+    pub(crate) fn call(&mut self, fun: u32) {
         self.write_word(self.registers[REG_S] + 4, self.registers[REG_L]);
         self.write_word(self.registers[REG_S] + 8, self.registers[REG_I] + 4);
         self.registers[REG_I] = fun;
@@ -388,7 +388,7 @@ impl Machine {
     }
     
     #[inline]
-    fn trigger_interrupt(&mut self, iid: u32) {
+    pub(crate) fn trigger_interrupt(&mut self, iid: u32) {
         self.registers[REG_Q] = iid;
         self.call(INTERRUPT_HANDLER as u32);
     }

@@ -115,9 +115,9 @@ A BCDEFG
 | `100` | stack/registers        |
 | `111` | I/O / System           |
 
-| `ABCDEFGH` | casm | arg0 | arg1 | arg2 |
-|------------|------|------|------|------|
-| `00000000` | noop | ---  | ---  | ---  |
+| `___ ABCDEFGH` | casm | arg0 | arg1 | arg2 |
+|----------------|------|------|------|------|
+| `000 00000000` | noop | ---  | ---  | ---  |
 
 ### Integer Arithmetic
 
@@ -128,112 +128,112 @@ The D bit specifices whether to perform an unsigned or signed operation:<br>
 
 The carry register contains the over/underflow of the operation
 
-| `ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation        |
-|---------------|------|------|------|------|------------------|
-| `000 X 0 001` | addx | lhs  | rhs  | res  | res = lhs + rhs  |
-| `000 X 0 010` | subx | lhs  | rhs  | res  | res = lhs - rhs  |
-| `000 X 0 011` | mulx | lhs  | rhs  | res  | res = lhs * rhs  |
-| `000 X 0 100` | divx | lhs  | rhs  | res  | res = lhs / rhs  |
-| `000 X 0 101` | modx | lhs  | rhs  | res  | res = lhs % rhs  |
-| `000 X 0 111` | cmpx | lhs  | rhs  | res  | set S+Z of F reg |
+| `___ ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation        |
+|-------------------|------|------|------|------|------------------|
+| `000 000 X 0 001` | addx | lhs  | rhs  | res  | res = lhs + rhs  |
+| `000 000 X 0 010` | subx | lhs  | rhs  | res  | res = lhs - rhs  |
+| `000 000 X 0 011` | mulx | lhs  | rhs  | res  | res = lhs * rhs  |
+| `000 000 X 0 100` | divx | lhs  | rhs  | res  | res = lhs / rhs  |
+| `000 000 X 0 101` | modx | lhs  | rhs  | res  | res = lhs % rhs  |
+| `000 000 X 0 111` | cmpx | lhs  | rhs  | res  | set S+Z of F reg |
 
 #### Operations only for signed ints
-| `ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation        |
-|---------------|------|------|------|------|------------------|
-| `000 1 1 000` | absi | arg  | res  | ---  | res = \|arg\|    |
-| `000 1 1 001` | powi | lhs  | rhs  | res  | res = lhs ** rhs |
+| `___ ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation        |
+|-------------------|------|------|------|------|------------------|
+| `000 000 1 1 000` | absi | arg  | res  | ---  | res = \|arg\|    |
+| `000 000 1 1 001` | powi | lhs  | rhs  | res  | res = lhs ** rhs |
 
 #### Bitwise operations
-| `ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation                  |
-|---------------|------|------|------|------|----------------------------|
-| `000 0 1 000` | and  | lhs  | rhs  | res  | res = lhs & rhs            |
-| `000 0 1 001` | or   | lhs  | rhs  | res  | res = lhs | rhs            |
-| `000 0 1 010` | xor  | lhs  | rhs  | res  | res = lhs ^ rhs            |
-| `000 0 1 011` | not  | arg  | res  | ---  | res = ~arg                 |
-| `000 0 1 100` | shl  | lhs  | rhs  | res  | res = lhs << rhs           |
-| `000 0 1 101` | shr  | lhs  | rhs  | res  | res = lhs >> rhs           |
-| `000 0 1 110` | rol  | lhs  | rhs  | res  | res = lhs <<< rhs (rotate) |
-| `000 0 1 111` | ror  | lhs  | rhs  | res  | res = lhs >>> rhs (rotate) |
+| `___ ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation                  |
+|-------------------|------|------|------|------|----------------------------|
+| `000 000 0 1 000` | and  | lhs  | rhs  | res  | res = lhs & rhs            |
+| `000 000 0 1 001` | or   | lhs  | rhs  | res  | res = lhs | rhs            |
+| `000 000 0 1 010` | xor  | lhs  | rhs  | res  | res = lhs ^ rhs            |
+| `000 000 0 1 011` | not  | arg  | res  | ---  | res = ~arg                 |
+| `000 000 0 1 100` | shl  | lhs  | rhs  | res  | res = lhs << rhs           |
+| `000 000 0 1 101` | shr  | lhs  | rhs  | res  | res = lhs >> rhs           |
+| `000 000 0 1 110` | rol  | lhs  | rhs  | res  | res = lhs <<< rhs (rotate) |
+| `000 000 0 1 111` | ror  | lhs  | rhs  | res  | res = lhs >>> rhs (rotate) |
 
 ### Conversions
-| `ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation       |
-|---------------|------|------|------|------|-----------------|
-| `000 1 1 100` | itu  | arg  | res  | ---  | int -> unsigned |
-| `000 1 1 101` | uti  | arg  | res  | ---  | unsigned -> int |
-| `000 1 1 110` | itf  | arg  | res  | ---  | int -> float    |
-| `000 1 1 111` | fti  | arg  | res  | ---  | float -> int    |
+| `___ ABC D E FGH` | casm | arg0 | arg1 | arg2 | operation       |
+|-------------------|------|------|------|------|-----------------|
+| `000 000 1 1 100` | itu  | arg  | res  | ---  | int -> unsigned |
+| `000 000 1 1 101` | uti  | arg  | res  | ---  | unsigned -> int |
+| `000 000 1 1 110` | itf  | arg  | res  | ---  | int -> float    |
+| `000 000 1 1 111` | fti  | arg  | res  | ---  | float -> int    |
 
 ### Floating point Arithmetic
 
-| `ABC DEFGH` | casm  | arg0 | arg1 | arg2 | operation          |
-|-------------|-------|------|------|------|--------------------|
-| `001 00000` | addf  | lhs  | rhs  | res  | res = lhs + rhs    |
-| `001 00001` | subf  | lhs  | rhs  | res  | res = lhs - rhs    |
-| `001 00010` | mulf  | lhs  | rhs  | res  | res = lhs * rhs    |
-| `001 00011` | divf  | lhs  | rhs  | res  | res = lhs / rhs    |
-| `001 00100` | modf  | lhs  | rhs  | res  | res = lhs % rhs    |
-| `001 00101` | absf  | arg  | res  | ---  | res = \|arg\|      |
-| `001 00110` | powfi | lhs  | rhs  | res  | res = lhs ** i_rhs |
-| `001 10110` | powff | lhs  | rhs  | res  | res = lhs ** rhs   |
-| `001 00111` | cmpf  | lhs  | rhs  | res  | set S+Z of F reg   |
-| `001 01000` | sqrt  | arg  | res  | ---  | res = sqrt(arg)    |
-| `001 01001` | exp   | arg  | res  | ---  | res = arg**e       |
-| `001 01010` | log   | lhs  | rhs  | res  | res = log(lhs, rhs)|
-| `001 11010` | ln    | arg  | res  | ---  | res = ln(arg)      |
-| `001 01011` | sin   | arg  | res  | ---  | res = sin(arg)     |
-| `001 01100` | asin  | arg  | res  | ---  | res = asin(arg)    |
-| `001 01101` | cos   | arg  | res  | ---  | res = cos(arg)     |
-| `001 01110` | tan   | arg  | res  | ---  | res = tan(arg)     |
-| `001 01111` | atan  | arg  | res  | ---  | res = atan(arg)    |
-| `001 10000` | sinh  | arg  | res  | ---  | res = sinh(arg)    |
-| `001 10001` | asih  | arg  | res  | ---  | res = asinh(arg)   |
-| `001 10010` | cosh  | arg  | res  | ---  | res = cosh(arg)    |
-| `001 10011` | acoh  | arg  | res  | ---  | res = acosh(arg)   |
+| `___ ABC DEFGH` | casm  | arg0 | arg1 | arg2 | operation          |
+|-----------------|-------|------|------|------|--------------------|
+| `000 001 00000` | addf  | lhs  | rhs  | res  | res = lhs + rhs    |
+| `000 001 00001` | subf  | lhs  | rhs  | res  | res = lhs - rhs    |
+| `000 001 00010` | mulf  | lhs  | rhs  | res  | res = lhs * rhs    |
+| `000 001 00011` | divf  | lhs  | rhs  | res  | res = lhs / rhs    |
+| `000 001 00100` | modf  | lhs  | rhs  | res  | res = lhs % rhs    |
+| `000 001 00101` | absf  | arg  | res  | ---  | res = \|arg\|      |
+| `000 001 00110` | powfi | lhs  | rhs  | res  | res = lhs ** i_rhs |
+| `000 001 10110` | powff | lhs  | rhs  | res  | res = lhs ** rhs   |
+| `000 001 00111` | cmpf  | lhs  | rhs  | res  | set S+Z of F reg   |
+| `000 001 01000` | sqrt  | arg  | res  | ---  | res = sqrt(arg)    |
+| `000 001 01001` | exp   | arg  | res  | ---  | res = arg**e       |
+| `000 001 01010` | log   | lhs  | rhs  | res  | res = log(lhs, rhs)|
+| `000 001 11010` | ln    | arg  | res  | ---  | res = ln(arg)      |
+| `000 001 01011` | sin   | arg  | res  | ---  | res = sin(arg)     |
+| `000 001 01100` | asin  | arg  | res  | ---  | res = asin(arg)    |
+| `000 001 01101` | cos   | arg  | res  | ---  | res = cos(arg)     |
+| `000 001 01110` | tan   | arg  | res  | ---  | res = tan(arg)     |
+| `000 001 01111` | atan  | arg  | res  | ---  | res = atan(arg)    |
+| `000 001 10000` | sinh  | arg  | res  | ---  | res = sinh(arg)    |
+| `000 001 10001` | asih  | arg  | res  | ---  | res = asinh(arg)   |
+| `000 001 10010` | cosh  | arg  | res  | ---  | res = cosh(arg)    |
+| `000 001 10011` | acoh  | arg  | res  | ---  | res = acosh(arg)   |
 
 ### Control Flow
 #### Jumps
-| `ABC DEFGH` | casm | arg0 | arg1 | arg2 | predicate (F reg bit) |
-|-------------|------|------|------|------|-----------------------|
-| `010 00000` | jmp  | addr | ---  | ---  | true                  |
-| `010 00010` | jz   | addr | ---  | ---  | Z == 1                |
-| `010 00011` | jnz  | addr | ---  | ---  | Z == 0                |
-| `010 00100` | jl   | addr | ---  | ---  | S == 1                |
-| `010 00101` | jnl  | addr | ---  | ---  | S == 0                |
-| `010 00110` | jc   | addr | ---  | ---  | C == 1                |
-| `010 00111` | jnc  | addr | ---  | ---  | C == 0                |
-| `010 01000` | jo   | addr | ---  | ---  | O == 1                |
-| `010 01001` | jno  | addr | ---  | ---  | O == 0                |
+| `___ ABC DEFGH` | casm | arg0 | arg1 | arg2 | predicate (F reg bit) |
+|-----------------|------|------|------|------|-----------------------|
+| `000 010 00000` | jmp  | addr | ---  | ---  | true                  |
+| `000 010 00010` | jz   | addr | ---  | ---  | Z == 1                |
+| `000 010 00011` | jnz  | addr | ---  | ---  | Z == 0                |
+| `000 010 00100` | jl   | addr | ---  | ---  | S == 1                |
+| `000 010 00101` | jnl  | addr | ---  | ---  | S == 0                |
+| `000 010 00110` | jc   | addr | ---  | ---  | C == 1                |
+| `000 010 00111` | jnc  | addr | ---  | ---  | C == 0                |
+| `000 010 01000` | jo   | addr | ---  | ---  | O == 1                |
+| `000 010 01001` | jno  | addr | ---  | ---  | O == 0                |
 #### Procedures
-| `ABC D EFGH` | casm | arg0 | arg1 | arg2 | notes                                    |
-|--------------|------|------|------|------|------------------------------------------|
-| `010 1 0000` | call | addr | ---  | ---  | pushes reg I+F to stack, jumps, sets F   |
-| `010 1 0001` | ret  | ---  | ---  | ---  | jumps to addr on stack, restores F       |
+| `___ ABC D EFGH` | casm | arg0 | arg1 | arg2 | notes                                    |
+|------------------|------|------|------|------|------------------------------------------|
+| `000 010 1 0000` | call | addr | ---  | ---  | pushes reg I+F to stack, jumps, sets F   |
+| `000 010 1 0001` | ret  | ---  | ---  | ---  | jumps to addr on stack, restores F       |
 
 ### Stack and Registers
-| `ABC DEFGH` | casm  | arg0 | arg1 | arg2 | notes                                     |
-|-------------|-------|------|------|------|-------------------------------------------|
-| `100 00000` | move  | src  | dst  | ---  | move src to dest, popping if src is stack |
-| `100 00001` | ld    | dst  | src  | ---  | set dst to memory @src                    |
-| `100 00011` | st    | src  | dst  | ---  | set memory @dst to src                    |
-| `100 00101` | ldb   | src  | dst  | ---  | set dst to memory @sr (1 byte)            |
-| `100 00111` | stb   | src  | dst  | ---  | set memory @dst to src (1 byte)           |
-| `100 01000` | dup   | ---  | ---  | ---  | duplicate topmost stack elem              |
-| `100 01001` | over  | ---  | ---  | ---  | dup second to topmost elem                |
-| `100 01010` | srl   | ---  | ---  | ---  | rotates the top 3 elems left: ABC -> BCA  |
-| `100 01011` | srr   | ---  | ---  | ---  | rotates the top 3 elems right: ABC -> CAB |
-| `100 01100` | enter | ---  | ---  | ---  | saves L to stack, sets L to S             |
-| `100 01101` | leave | ---  | ---  | ---  | set S to L, restores L from stack         |
-| `100 01110` | pshar | ---  | ---  | ---  | push all regs in order onto stack         |
-| `100 01111` | resar | ---  | ---  | ---  | restore all regs to values from stack     |
+| `___ ABC DEFGH` | casm  | arg0 | arg1 | arg2 | notes                                     |
+|-----------------|-------|------|------|------|-------------------------------------------|
+| `000 100 00000` | move  | src  | dst  | ---  | move src to dest, popping if src is stack |
+| `000 100 00001` | ld    | dst  | src  | ---  | set dst to memory @src                    |
+| `000 100 00011` | st    | src  | dst  | ---  | set memory @dst to src                    |
+| `000 100 00101` | ldb   | src  | dst  | ---  | set dst to memory @sr (1 byte)            |
+| `000 100 00111` | stb   | src  | dst  | ---  | set memory @dst to src (1 byte)           |
+| `000 100 01000` | dup   | ---  | ---  | ---  | duplicate topmost stack elem              |
+| `000 100 01001` | over  | ---  | ---  | ---  | dup second to topmost elem                |
+| `000 100 01010` | srl   | ---  | ---  | ---  | rotates the top 3 elems left: ___ ABC -> BCA  |
+| `000 100 01011` | srr   | ---  | ---  | ---  | rotates the top 3 elems right: ___ ABC -> CAB |
+| `000 100 01100` | enter | ---  | ---  | ---  | saves L to stack, sets L to S             |
+| `000 100 01101` | leave | ---  | ---  | ---  | set S to L, restores L from stack         |
+| `000 100 01110` | pshar | ---  | ---  | ---  | push all regs in order onto stack         |
+| `000 100 01111` | resar | ---  | ---  | ---  | restore all regs to values from stack     |
 
 ## Interrupts and System
-| `ABC DE FGH` | casm   | arg0   | arg1  | arg2 | notes                                                               |
-|--------------|--------|--------|-------|------|---------------------------------------------------------------------|
-| `111 00 000` | time   | millis | ---   | ---  | sleep the specified amout of milliseconds                           |
-| `111 00 001` | wait   | c      | ---   | ---  | wait c instr cycles, then interrupt with id 0. c = 0 cancels        |
-| `111 01 001` | dread  | did    | start | len  | reads len bytes to mem starting at start from device. len=0 cancels |
-| `111 01 010` | dwrite | did    | start | len  | writes len bytes starting at start to device. len=0 cancels         |
-| `111 01 011` | dstate | did    | read  | write| returns the read and write bytes left                               |
+| `___ ABC DE FGH` | casm   | arg0   | arg1  | arg2 | notes                                                               |
+|------------------|--------|--------|-------|------|---------------------------------------------------------------------|
+| `000 111 00 000` | time   | millis | ---   | ---  | sleep the specified amout of milliseconds                           |
+| `000 111 00 001` | wait   | c      | ---   | ---  | wait c instr cycles, then interrupt with id 0. c = 0 cancels        |
+| `000 111 01 001` | dread  | did    | start | len  | reads len bytes to mem starting at start from device. len=0 cancels |
+| `000 111 01 010` | dwrite | did    | start | len  | writes len bytes starting at start to device. len=0 cancels         |
+| `000 111 01 011` | dstate | did    | read  | write| returns the read and write bytes left                               |
 
 ### Interrupts/Devices
 A device can trigger the following events:
@@ -246,3 +246,11 @@ On an interrupt % is filled set to the device id and interrupt type.
 interrupt type is the topmost 4 bits and device id is the remaining bits.
 
 As device id gets incremented with every device attaching, this results in a maximum of 268435455 device attachments (28 bits)
+
+
+## Debugging
+| `___ ABCDEFGH` | casm       | arg0       | arg1     | arg2    | notes                                |
+|----------------|------------|------------|----------|---------|--------------------------------------|
+| `111 11111111` | breakpoint | optional: str tag of length 0-2 | hint for the debugger, ignored by VM |
+
+`breakpoint` or `breakpoint "xx"`

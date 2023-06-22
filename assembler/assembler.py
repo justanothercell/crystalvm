@@ -1,3 +1,4 @@
+import os
 import sys
 import re
 import struct
@@ -21,7 +22,7 @@ for arg in args:
     if arg in ['--breakpoints', '-b']:
         include_breakpoints = True
     elif arg.startswith('--debug-info-file=') or arg.startswith('-d='):
-        debug_info_file = arg.split('=', maxsplit=1)
+        debug_info_file = arg.split('=', maxsplit=1)[1]
     else:
         print(f'unhandled argument "{arg}"')
 
@@ -38,7 +39,7 @@ class Here:
         self.resolved = None
         if current_section is None:
             raise Exception('Cannot use $ outside of a section')
-        current_section.instructions.append(Location(self))
+        current_section.instructions.append((-1, Location(self)))
 
     def __add__(self, other):
         h = Here()
@@ -191,7 +192,7 @@ current_section = Section(uint(start_addr))
 
 def resolve(section):
     d = 0
-    for c, instr in enumerate(section.instructions):
+    for c, (line, instr) in enumerate(section.instructions):
         if type(instr) == Location:
             instr.here.resolved = section.addr + c * 4 + d   
             d -= 4
@@ -202,7 +203,7 @@ def resolve(section):
         elif type(instr) == Breakpoint:
             pass
         else:
-            raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')
+            error(f'invalid instruction "{instr}" of type {type(instr)}', line)
 
 for i, line in enumerate(lines):
     line = line.strip()
@@ -237,14 +238,14 @@ for i, line in enumerate(lines):
         current_section = section
     elif line[0] == '.':
         ty, expr = line[1:].strip().split(' ', 1)
-        current_section.instructions.append(Literal(ty, expr))
+        current_section.instructions.append((i, Literal(ty, expr)))
     elif line.startswith('breakpoint'):
         b, *tag = line.split(' ', 1)
         if include_breakpoints:
             tag = eval(tag[0], vars) if len(tag) > 0 else ''
             if len(tag) > 2:
                 error('breakpoint tag is too long, has to be 2 or less chars: "{tag}"', i)
-            current_section.instructions.append(Breakpoint(tag))
+            current_section.instructions.append((i, Breakpoint(tag)))
     else:
         args = line.split()
         cmd = args[0]
@@ -254,7 +255,7 @@ for i, line in enumerate(lines):
             if len(a) > 0:
                 r = eval_var(a, line=i)
                 cmd_args.append(r)
-        current_section.instructions.append(Instruction(cmd, cmd_args))
+        current_section.instructions.append((i, Instruction(cmd, cmd_args)))
 
 resolve(current_section)
 
@@ -283,7 +284,7 @@ for section in sections:
                 if type(instr.args[i]) == Variable:
                     instr.args[i] = vars[instr.args[i].name]
 
-with open(outfile, 'wb') as outbin:
+with open(outfile, 'wb') as outbin, open(debug_info_file if debug_info_file is not None else os.devnull, 'wb') as outdebug:
     current_addr = start_addr
     for section in sections:
         print(f'{section.addr.value-current_addr} buffer bytes')
@@ -291,7 +292,7 @@ with open(outfile, 'wb') as outbin:
             raise Exception(f'Invalid location {section.addr.value:08X}, already are at {current_addr:08X}')
         outbin.write(bytes(section.addr.value-current_addr))
         current_addr = section.addr.value
-        for instr in section.instructions:
+        for (line, instr) in section.instructions:
             print(instr)
             if type(instr) == Variable:
                 instr = vars[instr.name]
@@ -303,10 +304,16 @@ with open(outfile, 'wb') as outbin:
                 instr.write_to(outbin)
                 current_addr += len(instr)
             elif type(instr) == Breakpoint:
-                outbin.write(bytes(int('1111111111100000', base=2).to_bytes(4, 'big')))
+                outdebug.write(current_addr.to_bytes(4, 'big'))
+                outdebug.write(line.to_bytes(4, 'big'))
+
+                outbin.write(int('1111111111100000', base=2).to_bytes(2, 'big'))
                 outbin.write(instr.tag.ljust(2).encode('utf-8'))
                 current_addr += 4
-            elif type(instr) == Instruction:
+            elif type(instr) == Instruction:#
+                outdebug.write(current_addr.to_bytes(4, 'big'))
+                outdebug.write(line.to_bytes(4, 'big'))
+
                 cmd = instr.cmd
                 b = instr_to_bits(cmd)
                 nums = []
@@ -328,7 +335,7 @@ with open(outfile, 'wb') as outbin:
                         b += '1111111'
                         nums.append(arg)
                 b += '0' * (32-len(b))
-                outbin.write(bytes(int(b, base=2).to_bytes(4, 'big')))
+                outbin.write(int(b, base=2).to_bytes(4, 'big'))
                 current_addr += 4
                 for num in nums:
                     current_addr += 4
