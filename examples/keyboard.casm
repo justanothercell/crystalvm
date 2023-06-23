@@ -16,44 +16,35 @@
 #dropreg lambda x: (regids.append(x), regids.sort())
 
 ~@INTERRUPT
-    cmpu %Q 0
+    cmpu %D 0
     jnz @handle
     ret
     #handle $
         pshar
 
-        #event_ty newreg()
-        #device_id newreg()
-        and %Q 0b00001111_11111111_11111111_11111111 @device_id
-        and %Q 0b11110000_00000000_00000000_00000000 @event_ty
-
-        cmpu @event_ty 0b0000
+        cmpu %Q 0b0000
         jz @device_connect
-        cmpu @event_ty 0b0001
-        cmpu @event_ty 0b0010
-        cmpu @event_ty 0b0011
+        cmpu %Q 0b0001
+        jz @finish_handling
+        jz %Q 0b0010
+        jmp @finish_handling
+        ; only 0b0011 left
+        jmp @device_disconnect
 
         #device_connect $
-            dread @device_id @STR_16_BUF 16
+            dread %D @STR_16_BUF 16
             move @STR_16_BUF %20
             move @KEYBOARD_STR %21
             call @STRCMP
             jnz @finish_handling
+            move %D @keyboard_id
 
         #device_disconnect $
-            cmpu @keyboard_id @device_id
-        jnz @KEYBOARD_STR
-
-        cmpu @keyboard_id @device_id
-        jnz @KEYBOARD_STR
-
-        move @device_id @keyboard_id
+            jmp @finish_handling
 
     #finish_handling $
         resar
         ret
-    #_ dropreg(event_ty)
-    #_ dropreg(device_id)
 
 ~@START
     #counter newreg()
@@ -66,10 +57,8 @@
         addu @screen_char 1 @screen_char
         addu @counter 1 @counter
         
-        ; cmpu @counter 256
-        stb @TEXT_BUF_1 66
-        jmp @loop
-    stb @TEXT_BUF_1 67
+        cmpu @counter 256
+        jnz @loop
     #_ dropreg(counter)
     #_ dropreg(screen_char)
     #hlt $
@@ -81,6 +70,7 @@
 ; sets the Z bit of %F to 0 if equal and 1 if inequal. S bit gets modified.
 ; %20 and %21 now point to the strings with an offset of the length of the shorter one plus one
 #STRCMP $
+~@STRCMP
     #STRCMP_str1 "%20"
     #STRCMP_str2 "%21"
     #STRCMP_counter newreg()
@@ -88,6 +78,7 @@
     move @STRCMP_counter !
 
     #STRCMP_loop $
+    ~@STRCMP_loop
         ; are the chars at the current pos equal?
         cmpu @STRCMP_str1 @STRCMP_str2
         jnz @STRCMP_end
@@ -97,10 +88,11 @@
         ; increment the str pointers
         addu @STRCMP_str1 1 @STRCMP_str1
         addu @STRCMP_str2 1 @STRCMP_str2
-        ; jump if not null (cmpu a few liens above)
+        ; jump if not null (cmpu a few lines above)
         jnz @STRCMP_loop
 
     #STRCMP_end $
+    ~@STRCMP_end
         ; restore state of used regs and return
         ; %F Z bit should still be set
         move ! @STRCMP_counter 

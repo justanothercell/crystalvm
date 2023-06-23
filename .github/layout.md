@@ -19,6 +19,7 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 - carry register (C, reg 0x33 / 51)
 - flag register (F, reg 0x34 / 52)
 - interrupt info (Q, reg 0x35 / 53)
+- interrupt device id (D, reg 0x36 / 54)
 
 ### Flag Register
 ```
@@ -94,12 +95,9 @@ L---------JL-----JL-----JL-----J
 
 ### Args
 ```
-A BCDEFG
-^ ^^^^^^
-| reg id if A==1 else ignored
-|
-1: Stack 
-0: Register
+0ABCDEF: register
+1000000: stack
+1111111: literal value
 ```
 
 
