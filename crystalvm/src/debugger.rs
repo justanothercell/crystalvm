@@ -215,7 +215,7 @@ impl<'a> Debugger<'a> {
         (match arg {
             0b01111111 => "literal".to_owned(),
             0b01000000 => "!".to_owned(),
-            _ => format!("%{}", if arg < 48 { format!("{arg:02X}") } else { ["S", "I", "L", "C", "F", "Q"][arg as usize-48].to_owned() })
+            _ => format!("%{}", if arg < 48 { format!("{arg:02X}") } else { ["S", "I", "L", "C", "F", "Q", "D"][arg as usize-48].to_owned() })
         }, data)
     }
 }

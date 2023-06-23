@@ -5,24 +5,37 @@ use crate::{screen::{Screen, ScreenLifetime}, device::{Device, self}};
 
 /// STACK
 pub const REG_S: usize = 48;
-// INSTR PTR
+/// INSTR PTR
 pub const REG_I: usize = 49;
 /// FRAME PTR
 pub const REG_L: usize = 50;
-// CARRY
+/// CARRY
 pub const REG_C: usize = 51;
-// FLAG
+/// FLAG
 pub const REG_F: usize = 52;
-// INTERRUPT ID
+/// INTERRUPT ID
 pub const REG_Q: usize = 53;
+// INTERRUPT ID
+pub const REG_D: usize = 54;
 
+pub const NUM_REGS: usize = 55;
+
+/// zero: Z = a != b
 pub const FLAG_BIT_Z: u32 = 0b00000000_00000000_00000000_00000001;
+/// sign: S = a < b
 pub const FLAG_BIT_S: u32 = 0b00000000_00000000_00000000_00000010;
+/// carry: an operation over or underflowed/produced a carry value
 pub const FLAG_BIT_C: u32 = 0b00000000_00000000_00000000_00000100;
-pub const FLAG_BIT_O: u32 = 0b00000000_00000000_00000000_00001000;
+/// carry in: whether to include the carry of the last operation in this operation
 pub const FLAG_BIT_M: u32 = 0b00000000_00000000_10000000_00000000;
 pub const FLAG_BIT_E: u32 = 0b00000000_01000000_00000000_00000000;
 pub const FLAG_BIT_B: u32 = 0b00000000_10000000_00000000_00000000;
+
+pub const INTERRUPT_DEVICE_ATTACH: u32 = 0b00000000;
+pub const INTERRUPT_DEVICE_READ_FINISHED: u32 = 0b00000000;
+pub const INTERRUPT_DEVICE_WRITE_FINISHED: u32 = 0b00000000;
+pub const INTERRUPT_DEVICE_DETACH: u32 = 0b00000000;
+pub const INTERRUPT_DUMMY: u32 = u32::MAX;
 
 pub const IMAGE_BASE: usize = 0x0008DE00;
 pub const INTERRUPT_HANDLER: usize = 0x0008DE00;
@@ -41,7 +54,7 @@ pub const TEXT_HEIGHT: usize = 25;
 
 pub struct Machine {
     pub(crate) memory: Box<Vec<u8>>,
-    pub(crate) registers: Box<[u32; 54]>,
+    pub(crate) registers: Box<[u32; NUM_REGS]>,
     next_device_id: u32,
     interrupt_wait_counter: u32,
     screen_life: Arc<Mutex<ScreenLifetime>>,
@@ -65,13 +78,13 @@ impl Machine {
             std::ptr::copy_nonoverlapping(image_contents.as_ptr(), (memory.as_mut_ptr() as usize + IMAGE_BASE) as *mut u8, image_contents.len());
             std::ptr::copy_nonoverlapping(include_bytes!("../target/font.rbmf").as_ptr(), (memory.as_mut_ptr() as usize + BITMAP) as *mut u8, 256*64);
         }
-        let registers = Box::new([0;54]);
+        let registers = Box::new([0;NUM_REGS]);
 
         let prev_hook = Arc::new(std::panic::take_hook());
         let prev = prev_hook.clone();
         let reg_ptr = &registers as *const _ as usize;
         std::panic::set_hook(Box::new(move |info| {
-            println!("Panicked! Registers: {:X?}", unsafe {&*(reg_ptr as *const Box<[u32; 54]>)});
+            println!("Panicked! Registers: {:X?}", unsafe {&*(reg_ptr as *const Box<[u32; NUM_REGS]>)});
             prev(info);
         }));
         let mut machine = Machine {  
@@ -225,8 +238,7 @@ impl Machine {
             0b000_01000101 => jump_if!(|a| a & FLAG_BIT_S == 0), // jnl
             0b000_01000110 => jump_if!(|a| a & FLAG_BIT_C != 0), // jc
             0b000_01000111 => jump_if!(|a| a & FLAG_BIT_C == 0), // jnc
-            0b000_01001000 => jump_if!(|a| a & FLAG_BIT_O != 0), // jo
-            0b000_01001001 => jump_if!(|a| a & FLAG_BIT_O == 0), // jno
+            
             0b000_01010000 => linear_instr!{{
                 let fun = self.fetch_data(arg0);
                 self.call(fun);
@@ -333,7 +345,7 @@ impl Machine {
         if self.interrupt_wait_counter > 0 {
             self.interrupt_wait_counter -= 1;
             if self.interrupt_wait_counter == 0 {
-                self.trigger_interrupt(0);
+                self.trigger_interrupt(INTERRUPT_DUMMY, 0);
             }
         } 
     }
@@ -388,8 +400,9 @@ impl Machine {
     }
     
     #[inline]
-    pub(crate) fn trigger_interrupt(&mut self, iid: u32) {
-        self.registers[REG_Q] = iid;
+    pub(crate) fn trigger_interrupt(&mut self, interrupt_t: u32, did: u32) {
+        self.registers[REG_Q] = interrupt_t;
+        self.registers[REG_D] = did;
         self.call(INTERRUPT_HANDLER as u32);
     }
 

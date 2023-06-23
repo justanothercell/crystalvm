@@ -42,6 +42,12 @@
         #device_disconnect $
             jmp @finish_handling
 
+        #device_read_complete $
+            jmp @finish_handling
+
+        #device_write $
+            jmp @finish_handling
+
     #finish_handling $
         resar
         ret

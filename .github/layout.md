@@ -25,12 +25,11 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 ```
 32 bit
  00000000111111110000000011111111
-         ^^      ^           ^^^^
-         EB      M           OCSZ
+         ^^      ^            ^^^
+         EB      M            CSZ
 Z: Zero/Equal Flag         (jz/jnz)
 S: Sign Flag (1: negative) (jl/lnl)
 C: Carry Flag              (jc/jnc)
-O: Overflow Flag           (jo/jno)
 M: Carry In
 
 
@@ -199,8 +198,6 @@ The carry register contains the over/underflow of the operation
 | `000 010 00101` | jnl  | addr | ---  | ---  | S == 0                |
 | `000 010 00110` | jc   | addr | ---  | ---  | C == 1                |
 | `000 010 00111` | jnc  | addr | ---  | ---  | C == 0                |
-| `000 010 01000` | jo   | addr | ---  | ---  | O == 1                |
-| `000 010 01001` | jno  | addr | ---  | ---  | O == 0                |
 #### Procedures
 | `___ ABC D EFGH` | casm | arg0 | arg1 | arg2 | notes                                    |
 |------------------|------|------|------|------|------------------------------------------|
