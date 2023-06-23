@@ -7,24 +7,47 @@ from instructions_map import instr_to_bits
 
 start_addr = 0x0008DE00
 
-if len(sys.argv) < 3:
-    print('usage: assepbler.py <in.casm> <out.cstl>')
-    exit(1)
-file = sys.argv[1]
-outfile = sys.argv[2]
+def print_help():
+    print('=== help ===')
+    print('assembler.py <file.casm> <file.cstl>')
+    print('flags:')
+    print('  --breakpoints | -b')
+    print('  --debug-info-file=<file.cdbg> | -d=<file.cdbg>')
+    print()
+    print('alternatively use the short cut:')
+    print('  assembler.py ~file')
+    print('which expands to:')
+    print('  assembler.py <file.casm> <file.cstl> --breakpoints --debug-info-file=<file.cdbg>')
 
-include_breakpoints = False
-debug_info_file = None
-
-args = sys.argv[3:]
-
-for arg in args:
-    if arg in ['--breakpoints', '-b']:
+if len(sys.argv) == 2:
+    if sys.argv[1][0] == '~':
+        name = sys.argv[1][1:]
+        file = f'{name}.casm'
+        outfile = f'{name}.cstl'
         include_breakpoints = True
-    elif arg.startswith('--debug-info-file=') or arg.startswith('-d='):
-        debug_info_file = arg.split('=', maxsplit=1)[1]
+        debug_info_file = f'{name}.cdbg'
     else:
-        print(f'unhandled argument "{arg}"')
+        print_help()
+        exit(1)
+elif len(sys.argv) < 3:
+    print_help()
+    exit(1)
+else:
+    file = sys.argv[1]
+    outfile = sys.argv[2]
+
+    include_breakpoints = False
+    debug_info_file = None
+
+    args = sys.argv[3:]
+
+    for arg in args:
+        if arg in ['--breakpoints', '-b']:
+            include_breakpoints = True
+        elif arg.startswith('--debug-info-file=') or arg.startswith('-d='):
+            debug_info_file = arg.split('=', maxsplit=1)[1]
+        else:
+            print(f'unhandled argument "{arg}"')
 
 with open(file, 'r') as source_file:
     lines = source_file.readlines()
@@ -106,10 +129,6 @@ class Location:
 
     def __repr__(self) -> str:
         return f'Location({self.here})'
-
-class Stack:
-    def __repr__(self) -> str:
-        return 'Stack'
     
 class Variable:
     def __init__(self, name):
@@ -170,7 +189,7 @@ class Breakpoint:
 def eval_var(var: str, line=-1):
     var = var.strip()
     if var == '!':
-        return Stack()
+        return '!'
     if var[0] == '%':
         return var
     if var[0] == '@':
@@ -192,16 +211,15 @@ current_section = Section(uint(start_addr))
 
 def resolve(section):
     d = 0
-    for c, (line, instr) in enumerate(section.instructions):
+    for line, instr in section.instructions:
         if type(instr) == Location:
-            instr.here.resolved = section.addr + c * 4 + d   
-            d -= 4
+            instr.here.resolved = section.addr + d
         elif type(instr) == Instruction:
-            d += sum([type(x) != str for x in instr.args]) * 4
+            d += sum([type(x) != str for x in instr.args]) * 4 + 4
         elif type(instr) == Literal:
-            d += len(instr) - 4
+            d += len(instr)
         elif type(instr) == Breakpoint:
-            pass
+            d += 4
         else:
             error(f'invalid instruction "{instr}" of type {type(instr)}', line)
 
@@ -219,7 +237,7 @@ for i, line in enumerate(lines):
             expr = expr.replace(match, str(eval_var(match)))
         try:
             if name in vars and name != '_':
-                error(f'variable {name} already exists, can\'t be redefined', i)
+                error(f'Variable {name} already exists, can\'t be redefined. THey a section_var naming scheme to make this less likely to happen', i)
             vars[name] = eval(expr, vars)
         except Exception as e:
             error(e, i)
@@ -263,6 +281,12 @@ sections = sorted(sections, key=lambda s: s.addr.value)
 
 
 def write_value(file, num, bytes_len=4) -> bool:
+    if type(num) == Variable:
+        if num.name in vars:
+            num = vars[num.name]
+        else:
+            return False
+
     if type(num) == int:
         file.write(num.to_bytes(bytes_len, 'big'))
         return True
@@ -287,7 +311,7 @@ for section in sections:
 with open(outfile, 'wb') as outbin, open(debug_info_file if debug_info_file is not None else os.devnull, 'wb') as outdebug:
     current_addr = start_addr
     for section in sections:
-        print(f'{section.addr.value-current_addr} buffer bytes')
+        print(f'-> {section.addr.value-current_addr} buffer bytes')
         if section.addr.value < current_addr:
             raise Exception(f'Invalid location {section.addr.value:08X}, already are at {current_addr:08X}')
         outbin.write(bytes(section.addr.value-current_addr))
@@ -310,7 +334,7 @@ with open(outfile, 'wb') as outbin, open(debug_info_file if debug_info_file is n
                 outbin.write(int('1111111111100000', base=2).to_bytes(2, 'big'))
                 outbin.write(instr.tag.ljust(2).encode('utf-8'))
                 current_addr += 4
-            elif type(instr) == Instruction:#
+            elif type(instr) == Instruction:
                 outdebug.write(current_addr.to_bytes(4, 'big'))
                 outdebug.write(line.to_bytes(4, 'big'))
 
@@ -319,18 +343,18 @@ with open(outfile, 'wb') as outbin, open(debug_info_file if debug_info_file is n
                 nums = []
                 for arg in instr.args:
                     if type(arg) == str:
-                        if arg[0] == '%' and arg[1:].isnumeric():
+                        if arg == '!':
+                            b += '1000000'
+                        elif arg[0] == '%' and arg[1:].isnumeric():
                             n = int(arg[1:], base=16)
                             if n > 48:
                                 raise Exception(f'invalid trg num "{arg}"')
                             b += '0' + f'{n:06b}'
-                        elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F', 'Q']:
-                            n = ['S', 'I', 'L', 'C', 'F', 'Q'].index(arg[1]) + 48
+                        elif len(arg) == 2 and arg[0] == '%' and arg[1] in ['S', 'I', 'L', 'C', 'F', 'Q', 'D']:
+                            n = ['S', 'I', 'L', 'C', 'F', 'Q', 'D'].index(arg[1]) + 48
                             b += '0' + f'{n:06b}'
                         else:
                             raise Exception(f'invalid arg "{arg}"')
-                    elif type(arg) == Stack:
-                        b += '1000000'
                     else:
                         b += '1111111'
                         nums.append(arg)
@@ -340,6 +364,6 @@ with open(outfile, 'wb') as outbin, open(debug_info_file if debug_info_file is n
                 for num in nums:
                     current_addr += 4
                     if not write_value(outbin, num):
-                        raise Exception(f'invalid argument "{num}" of type {type(instr)} for {" ".join([str(i) for i in instr])}')
+                        error(f'invalid argument `{num}` of type {type(instr)} for `{instr}`', line)
             else:
-                raise Exception(f'invalid instruction "{instr}" of type {type(instr)}')
+                error(f'invalid instruction `{instr}` of type {type(instr)}', line)
