@@ -112,11 +112,14 @@ impl<'a> Debugger<'a> {
         let mut help = false;
         let mut print_regs = false;
         let mut print_mem = None;
-        let mut n = 1u32;
+        let mut n = 0u32;
         let mut breakpoint = false;
         let mut breakpoint_tag = None;
 
         let r: Result<(), String> = try {
+            if buffer.trim().len() == 0 {
+                n = 1;
+            }
             for arg in buffer.split(',') {
                 let arg = arg.trim();
                 if arg.len() == 0 { continue; }
@@ -132,8 +135,8 @@ impl<'a> Debugger<'a> {
                             print_regs = b == "regs";
                             if b.starts_with("mem:") {
                                 if let Some((start_s, len_s)) = b.split_once(':').unwrap().1.split_once('+') {
-                                    let start = string_to_u32(b.trim().to_string()).map_err(|_| format!("could not parse start in `{arg}` for `print=mem:start+len`"))?;
-                                    let len = string_to_u32(b.trim().to_string()).map_err(|_| format!("could not parse len in `{arg}` for `print=mem:start+len`"))?;
+                                    let start = string_to_u32(start_s.trim().to_string()).map_err(|_| format!("could not parse start in `{arg}` for `print=mem:start+len`"))?;
+                                    let len = string_to_u32(len_s.trim().to_string()).map_err(|_| format!("could not parse len in `{arg}` for `print=mem:start+len`"))?;
                                     print_mem = Some((start, len));
                                 } else {
                                     Err(format!("Arg formated invalidly `{arg}` for `print=mem:start+len`"))?;
@@ -166,7 +169,10 @@ impl<'a> Debugger<'a> {
                 }
 
                 if let Some((start, len)) = print_mem {
-                    println!("{:016X?}", &self.machine.memory[start as usize..start as usize+len as usize]);
+                    for slice in &mut self.machine.memory[start as usize..start as usize+len as usize].chunks_exact(4) {
+                        print!("{:08X?} ", u32::from_be_bytes(slice.try_into().unwrap()));
+                    }
+                    println!();
                 }
 
                 *CTRLC_ABORT.lock().unwrap() = false;

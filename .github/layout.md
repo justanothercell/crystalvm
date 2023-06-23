@@ -26,12 +26,12 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 32 bit
  00000000111111110000000011111111
          ^^      ^            ^^^
-         EB      M            CSZ
+         EB      MA           CSZ
 Z: Zero/Equal Flag         (jz/jnz)
 S: Sign Flag (1: negative) (jl/lnl)
 C: Carry Flag              (jc/jnc)
-M: Carry In
-
+A: Block interrupts: wait triggers once A = 0, device attachments fail and need to be retried
+M: Carry In: whether to carry in the overflow/carry of the last operation for this one
 
 B: Actve buffer (0: buffer 1, 1: buffer 2)
 E: Screen Mode (0: text, 1: video)
@@ -198,6 +198,7 @@ The carry register contains the over/underflow of the operation
 | `000 010 00101` | jnl  | addr | ---  | ---  | S == 0                |
 | `000 010 00110` | jc   | addr | ---  | ---  | C == 1                |
 | `000 010 00111` | jnc  | addr | ---  | ---  | C == 0                |
+
 #### Procedures
 | `___ ABC D EFGH` | casm | arg0 | arg1 | arg2 | notes                                    |
 |------------------|------|------|------|------|------------------------------------------|
@@ -205,26 +206,26 @@ The carry register contains the over/underflow of the operation
 | `000 010 1 0001` | ret  | ---  | ---  | ---  | jumps to addr on stack, restores F       |
 
 ### Stack and Registers
-| `___ ABC DEFGH` | casm  | arg0 | arg1 | arg2 | notes                                     |
-|-----------------|-------|------|------|------|-------------------------------------------|
-| `000 100 00000` | move  | src  | dst  | ---  | move src to dest, popping if src is stack |
-| `000 100 00001` | ld    | dst  | src  | ---  | set dst to memory @src                    |
-| `000 100 00011` | st    | src  | dst  | ---  | set memory @dst to src                    |
-| `000 100 00101` | ldb   | src  | dst  | ---  | set dst to memory @sr (1 byte)            |
-| `000 100 00111` | stb   | src  | dst  | ---  | set memory @dst to src (1 byte)           |
-| `000 100 01000` | dup   | ---  | ---  | ---  | duplicate topmost stack elem              |
-| `000 100 01001` | over  | ---  | ---  | ---  | dup second to topmost elem                |
-| `000 100 01010` | srl   | ---  | ---  | ---  | rotates the top 3 elems left: ___ ABC -> BCA  |
-| `000 100 01011` | srr   | ---  | ---  | ---  | rotates the top 3 elems right: ___ ABC -> CAB |
-| `000 100 01100` | enter | ---  | ---  | ---  | saves L to stack, sets L to S             |
-| `000 100 01101` | leave | ---  | ---  | ---  | set S to L, restores L from stack         |
-| `000 100 01110` | pshar | ---  | ---  | ---  | push all regs in order onto stack         |
-| `000 100 01111` | resar | ---  | ---  | ---  | restore all regs to values from stack     |
+| `___ ABC DEFGH` | casm  | arg0 | arg1 | arg2 | notes                                                     |
+|-----------------|-------|------|------|------|-----------------------------------------------------------|
+| `000 100 00000` | move  | src  | dst  | ---  | move src to dest, popping if src is stack                 |
+| `000 100 00001` | ld    | dst  | src  | ---  | set dst to memory @src                                    |
+| `000 100 00011` | st    | src  | dst  | ---  | set memory @dst to src                                    |
+| `000 100 00101` | ldb   | src  | dst  | ---  | set dst to memory @sr (1 byte)                            |
+| `000 100 00111` | stb   | src  | dst  | ---  | set memory @dst to src (1 byte)                           |
+| `000 100 01000` | dup   | ---  | ---  | ---  | duplicate topmost stack elem                              |
+| `000 100 01001` | over  | ---  | ---  | ---  | dup second to topmost elem                                |
+| `000 100 01010` | srl   | ---  | ---  | ---  | rotates the top 3 elems left:  ___ ABC -> BCA             |
+| `000 100 01011` | srr   | ---  | ---  | ---  | rotates the top 3 elems right: ___ ABC -> CAB             |
+| `000 100 01100` | enter | ---  | ---  | ---  | saves L to stack, sets L to S                             |
+| `000 100 01101` | leave | ---  | ---  | ---  | set S to L, restores L from stack                         |
+| `000 100 01110` | pshar | ---  | ---  | ---  | push all regs in order onto stack, except for I and F     |
+| `000 100 01111` | resar | ---  | ---  | ---  | restore all regs to values from stack, except for I and F |
 
 ## Interrupts and System
 | `___ ABC DE FGH` | casm   | arg0   | arg1  | arg2 | notes                                                               |
 |------------------|--------|--------|-------|------|---------------------------------------------------------------------|
-| `000 111 00 000` | time   | millis | ---   | ---  | sleep the specified amout of milliseconds                           |
+| `000 111 00 000` | time   | upper  | lower |      | writes the current u64 unix time in millis to reg @upper and @lower |
 | `000 111 00 001` | wait   | c      | ---   | ---  | wait c instr cycles, then interrupt with id 0. c = 0 cancels        |
 | `000 111 01 001` | dread  | did    | start | len  | reads len bytes to mem starting at start from device. len=0 cancels |
 | `000 111 01 010` | dwrite | did    | start | len  | writes len bytes starting at start to device. len=0 cancels         |

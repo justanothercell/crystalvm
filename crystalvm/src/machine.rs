@@ -1,7 +1,7 @@
 use std::{path::Path, fs::File, io::{Seek, Read}, sync::{Arc, Mutex, RwLock}, collections::HashMap, hash::BuildHasher, panic::PanicInfo, rc::Rc};
 use std::ops::*;
 
-use crate::{screen::{Screen, ScreenLifetime}, device::{Device, self}};
+use crate::{screen::{Screen, ScreenLifetime, Keyboard, Mouse}, device::{Device, self}};
 
 /// STACK
 pub const REG_S: usize = 48;
@@ -26,6 +26,8 @@ pub const FLAG_BIT_Z: u32 = 0b00000000_00000000_00000000_00000001;
 pub const FLAG_BIT_S: u32 = 0b00000000_00000000_00000000_00000010;
 /// carry: an operation over or underflowed/produced a carry value
 pub const FLAG_BIT_C: u32 = 0b00000000_00000000_00000000_00000100;
+/// block interrupts: wait triggers once A=0, device attaching fails and needs to be retried later
+pub const FLAG_BIT_A: u32 = 0b00000000_00000000_01000000_00000000;
 /// carry in: whether to include the carry of the last operation in this operation
 pub const FLAG_BIT_M: u32 = 0b00000000_00000000_10000000_00000000;
 pub const FLAG_BIT_E: u32 = 0b00000000_01000000_00000000_00000000;
@@ -46,6 +48,7 @@ pub const SCREEN_BUFFER_2: usize = 0x0003E800;
 pub const TEXT_BUFFER_1: usize = 0x0007D000;
 pub const TEXT_BUFFER_2: usize = 0x0007D3E8;
 pub const BITMAP: usize = 0x0007D800;
+pub const STACK_BASE: usize = 0x00081800;
 
 pub const SCREEN_WIDTH: usize = 320;
 pub const SCREEN_HEIGHT: usize = 200;
@@ -60,7 +63,10 @@ pub struct Machine {
     screen_life: Arc<Mutex<ScreenLifetime>>,
     devices: DeviceMap,
 
-    default_panic_hook: Arc<Box<dyn for<'a, 'b> std::ops::Fn(&'a PanicInfo<'b>) + Send + Sync>>
+    default_panic_hook: Arc<Box<dyn for<'a, 'b> std::ops::Fn(&'a PanicInfo<'b>) + Send + Sync>>,
+
+    keyboard: Option<Keyboard>,
+    mouse: Option<Mouse>,
 }
 
 impl Machine {
@@ -73,12 +79,18 @@ impl Machine {
             panic!("need at least 0x{:X} memory cells, only got 0x{:X} supplied", img_size + IMAGE_BASE, memory_size)
         }
         let mut memory = Box::new(Vec::with_capacity(memory_size));
+        // actually zero initialize it
+        for _ in 0..memory_size {
+            memory.push(0);
+        }
         unsafe{ 
-            memory.set_len(memory_size);
+            //memory.set_len(memory_size);
             std::ptr::copy_nonoverlapping(image_contents.as_ptr(), (memory.as_mut_ptr() as usize + IMAGE_BASE) as *mut u8, image_contents.len());
             std::ptr::copy_nonoverlapping(include_bytes!("../target/font.rbmf").as_ptr(), (memory.as_mut_ptr() as usize + BITMAP) as *mut u8, 256*64);
         }
-        let registers = Box::new([0;NUM_REGS]);
+        let mut registers = Box::new([0;NUM_REGS]);
+        registers[REG_S] = STACK_BASE as u32;
+        registers[REG_I] = ENTRYPOINT as u32;
 
         let prev_hook = Arc::new(std::panic::take_hook());
         let prev = prev_hook.clone();
@@ -87,21 +99,32 @@ impl Machine {
             println!("Panicked! Registers: {:X?}", unsafe {&*(reg_ptr as *const Box<[u32; NUM_REGS]>)});
             prev(info);
         }));
+        let (screen_life, keyboard, mouse) = Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, window_scale, window_title);
         let mut machine = Machine {  
-            screen_life: Screen::create(memory.as_ptr() as usize, &registers[REG_F] as *const _ as usize, window_scale, window_title),
+            screen_life,
             memory,
             registers,
             next_device_id: 1,
             interrupt_wait_counter: 0,
             devices: Default::default(),
 
-            default_panic_hook: prev_hook
+            default_panic_hook: prev_hook,
+
+            keyboard: Some(keyboard),
+            mouse: Some(mouse)
         };
-        machine.registers[REG_I] = ENTRYPOINT as u32;
         machine
     }
 
-    pub(crate) fn execute_next(&mut self) {
+    pub fn take_keyboard(&mut self) -> Option<Keyboard> {
+        self.keyboard.take()
+    }
+
+    pub fn take_mouse(&mut self) -> Option<Mouse> {
+        self.mouse.take()
+    }
+
+    pub fn execute_next(&mut self) {
         let raw = self.read_word(self.registers[REG_I]);
         let instr = raw >> 21;
         let arg0 = (raw >> 14 & 0b01111111) as u8;
@@ -245,8 +268,8 @@ impl Machine {
             }}, // call
             0b000_01010001 => linear_instr!{{
                 self.registers[REG_S] = self.registers[REG_L];
-                self.registers[REG_I] = self.read_word(self.registers[REG_L] + 4);
-                self.registers[REG_L] = self.read_word(self.registers[REG_L]);
+                self.registers[REG_I] = self.read_word(self.registers[REG_L] + 8);
+                self.registers[REG_L] = self.read_word(self.registers[REG_L] + 4);
             }}, // ret
             0b000_10000000 => linear_instr!{{
                 let v = self.fetch_data(arg0);
@@ -307,12 +330,14 @@ impl Machine {
             }}, // leave
             0b000_10001110 => linear_instr!{{
                 for i in 0..self.registers.len() {
-                    self.set_data(0b01111111, self.registers[i])
+                    if i == REG_I || i == REG_F { continue; }
+                    self.set_data(0b01000000, self.registers[i])
                 }
             }}, // pshar
             0b000_10001111 => linear_instr!{{
                 for i in (0..self.registers.len()).rev() {
-                    self.registers[i] = self.fetch_data(0b01111111);
+                    if i == REG_I || i == REG_F { continue; }
+                    self.registers[i] = self.fetch_data(0b01000000);
                 }
             }}, // resar
             0b000_11100000 => linear_instr!(()), // time
@@ -462,12 +487,14 @@ impl Machine {
         });
         self.devices.insert(device_id, attached_device);
         self.next_device_id += 1;
+        self.trigger_interrupt(INTERRUPT_DEVICE_ATTACH, device_id);
         device_id
     }
 
     pub fn remove_device(&mut self, device_id: u32) -> bool {
         self.devices.remove(&device_id).map(|device| {
-            device.write().unwrap().alive = false
+            device.write().unwrap().alive = false;
+            self.trigger_interrupt(INTERRUPT_DEVICE_DETACH, device_id);
         }).is_some()
     }
 }

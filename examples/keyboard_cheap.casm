@@ -1,0 +1,84 @@
+#SCREEN_BUF_1 0x00000000
+#SCREEN_BUF_2 0x0003E800
+#TEXT_BUF_1 0x0007D000
+#TEXT_BUF_2 0x0007D400
+
+#SCREEN_W 320
+#SCREEN_H 200
+#TEXT_W 40
+#TEXT_H 25
+
+#INTERRUPT 0x0008DE00
+#START 0x0008E000
+
+#regids [f'%{id:02X}' for id in range(49)]
+#newreg lambda: regids.pop(0)
+#dropreg lambda x: (regids.append(x), regids.sort())
+
+
+; this implementation just expects the first attached device to be the keyboard and thus bypasses all the checks
+
+~@INTERRUPT
+    cmpu %D 0
+    jnz @handle
+    ret
+    #handle $
+        pshar
+
+        cmpu %Q 0b0000
+        jz @device_connect
+        cmpu %Q 0b0001
+        jz @device_read_complete
+        cmpu %Q 0b0010
+        jz @device_write_complete
+        ; cmpu %Q 0b0011 -> check redundant, as its the only type left
+        jmp @device_disconnect
+
+        #device_connect $
+            dread %D @STR_16_BUF 16
+            breakpoint "i1"
+            jmp @finish_handling
+
+        #device_disconnect $
+            jmp @finish_handling
+
+        #device_read_complete $
+            dread %D @KEY_DATA 7
+            breakpoint "i2"
+            jmp @finish_handling
+
+        #device_write_complete $
+            jmp @finish_handling
+
+    #finish_handling $
+        resar
+        ret
+
+~@START
+    #counter newreg()
+    #screen_char newreg()
+    
+    move 0u @counter
+    move @TEXT_BUF_1 @screen_char 
+    #loop $
+        stb @screen_char 65
+        addu @screen_char 1 @screen_char
+        addu @counter 1 @counter
+        
+        cmpu @counter 256
+        jnz @loop
+    #_ dropreg(counter)
+    #_ dropreg(screen_char)
+    #hlt $
+        jmp @hlt
+
+#DATA $ + 16
+~@DATA
+    #STR_16_BUF $
+    . ascii "\0"*16
+
+    #KEYBOARD_STR $
+    . ascii "keyboard\0"
+
+    #KEY_DATA $
+    . ascii "\0"*8
