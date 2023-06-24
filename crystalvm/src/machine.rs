@@ -26,17 +26,15 @@ pub const FLAG_BIT_Z: u32 = 0b00000000_00000000_00000000_00000001;
 pub const FLAG_BIT_S: u32 = 0b00000000_00000000_00000000_00000010;
 /// carry: an operation over or underflowed/produced a carry value
 pub const FLAG_BIT_C: u32 = 0b00000000_00000000_00000000_00000100;
-/// block interrupts: wait triggers once A=0, device attaching fails and needs to be retried later
-pub const FLAG_BIT_A: u32 = 0b00000000_00000000_01000000_00000000;
 /// carry in: whether to include the carry of the last operation in this operation
 pub const FLAG_BIT_M: u32 = 0b00000000_00000000_10000000_00000000;
 pub const FLAG_BIT_E: u32 = 0b00000000_01000000_00000000_00000000;
 pub const FLAG_BIT_B: u32 = 0b00000000_10000000_00000000_00000000;
 
 pub const INTERRUPT_DEVICE_ATTACH: u32 = 0b00000000;
-pub const INTERRUPT_DEVICE_READ_FINISHED: u32 = 0b00000000;
-pub const INTERRUPT_DEVICE_WRITE_FINISHED: u32 = 0b00000000;
-pub const INTERRUPT_DEVICE_DETACH: u32 = 0b00000000;
+pub const INTERRUPT_DEVICE_READ_FINISHED: u32 = 0b00000001;
+pub const INTERRUPT_DEVICE_WRITE_FINISHED: u32 = 0b00000010;
+pub const INTERRUPT_DEVICE_DETACH: u32 = 0b00000011;
 pub const INTERRUPT_DUMMY: u32 = u32::MAX;
 
 pub const IMAGE_BASE: usize = 0x0008DE00;
@@ -62,6 +60,7 @@ pub struct Machine {
     interrupt_wait_counter: u32,
     screen_life: Arc<Mutex<ScreenLifetime>>,
     devices: DeviceMap,
+    interrupt_queue: Arc<Mutex<Vec<(u32, u32)>>>, 
 
     default_panic_hook: Arc<Box<dyn for<'a, 'b> std::ops::Fn(&'a PanicInfo<'b>) + Send + Sync>>,
 
@@ -107,6 +106,7 @@ impl Machine {
             next_device_id: 1,
             interrupt_wait_counter: 0,
             devices: Default::default(),
+            interrupt_queue: Default::default(),
 
             default_panic_hook: prev_hook,
 
@@ -125,6 +125,11 @@ impl Machine {
     }
 
     pub fn execute_next(&mut self) {
+        let queued = std::mem::take(&mut *self.interrupt_queue.lock().unwrap());
+        for (interrupt_ty, did) in queued {
+            self.trigger_interrupt(interrupt_ty, did);
+        }
+
         let raw = self.read_word(self.registers[REG_I]);
         let instr = raw >> 21;
         let arg0 = (raw >> 14 & 0b01111111) as u8;
@@ -262,15 +267,16 @@ impl Machine {
             0b000_01000110 => jump_if!(|a| a & FLAG_BIT_C != 0), // jc
             0b000_01000111 => jump_if!(|a| a & FLAG_BIT_C == 0), // jnc
             
-            0b000_01010000 => linear_instr!{{
+            0b000_01010000 => {
                 let fun = self.fetch_data(arg0);
+                self.registers[REG_I] += 4;
                 self.call(fun);
-            }}, // call
-            0b000_01010001 => linear_instr!{{
+            }, // call
+            0b000_01010001 => {
                 self.registers[REG_S] = self.registers[REG_L];
                 self.registers[REG_I] = self.read_word(self.registers[REG_L] + 8);
                 self.registers[REG_L] = self.read_word(self.registers[REG_L] + 4);
-            }}, // ret
+            }, // ret
             0b000_10000000 => linear_instr!{{
                 let v = self.fetch_data(arg0);
                 self.set_data(arg1, v)
@@ -350,6 +356,7 @@ impl Machine {
                     let mut write = device.write().unwrap();
                     write.read_pointer = ptr;
                     write.read_length = len;
+                    println!("reading: {len}")
                 }
             }}, // dread 
             0b000_11101010 => linear_instr!{{
@@ -418,7 +425,7 @@ impl Machine {
     #[inline]
     pub(crate) fn call(&mut self, fun: u32) {
         self.write_word(self.registers[REG_S] + 4, self.registers[REG_L]);
-        self.write_word(self.registers[REG_S] + 8, self.registers[REG_I] + 4);
+        self.write_word(self.registers[REG_S] + 8, self.registers[REG_I]);
         self.registers[REG_I] = fun;
         self.registers[REG_L] = self.registers[REG_S];
         self.registers[REG_S] += 8;
@@ -426,6 +433,7 @@ impl Machine {
     
     #[inline]
     pub(crate) fn trigger_interrupt(&mut self, interrupt_t: u32, did: u32) {
+        println!("interrupt_t = {interrupt_t}, device_id = {did}");
         self.registers[REG_Q] = interrupt_t;
         self.registers[REG_D] = did;
         self.call(INTERRUPT_HANDLER as u32);
@@ -443,45 +451,56 @@ impl Machine {
             
         }));
         let thread_read_device = attached_device.clone();
-        let thread_read_memory_ptr = &self.memory as *const _ as usize;
+        let thread_read_memory_ptr = &mut self.memory as *mut _ as usize;
+        let interrupt_queue = self.interrupt_queue.clone();
         std::thread::spawn(move || {
             let memory = unsafe { &mut*(thread_read_memory_ptr as *mut Vec<u8>)};
             loop {
                 let l = {
                     let read = thread_read_device.read().unwrap();
-                    if !read.alive {
-                        return;
-                    }
                     read.read_length
                 };
                 if l > 0 {
+                    println!("l={l}");
                     let mut write = thread_read_device.write().unwrap();
+                    if !write.alive {
+                        return;
+                    }
                     if let Some(b) = write.device.write_byte() {
                         memory[write.read_pointer as usize] = b;
                         write.read_pointer += 1;
                         write.read_length -= 1;
+                        if write.read_length == 0 {
+                            println!("read1");
+                            interrupt_queue.lock().unwrap().push((INTERRUPT_DEVICE_READ_FINISHED, device_id));
+                            println!("read2");
+                        }
                     }
                 }
             }
         });
         let thread_write_device = attached_device.clone();
-        let thread_write_memory_ptr = &self.memory as *const _ as usize;
+        let thread_write_memory_ptr = &mut self.memory as *mut _ as usize;
+        let interrupt_queue = self.interrupt_queue.clone();
         std::thread::spawn(move || {
             let memory = unsafe { &mut*(thread_write_memory_ptr as *mut Vec<u8>)};
             loop {
                 let l = {
                     let read = thread_write_device.read().unwrap();
-                    if !read.alive {
-                        return;
-                    }
                     read.write_length
                 };
                 if l > 0 {
                     let mut write = thread_write_device.write().unwrap();
+                    if !write.alive {
+                        return;
+                    }
                     let b = memory[write.write_pointer as usize];
                     write.device.receive_byte(b);
                     write.write_pointer += 1;
                     write.write_length -= 1;
+                    if write.write_length == 0 {
+                        interrupt_queue.lock().unwrap().push((INTERRUPT_DEVICE_WRITE_FINISHED, device_id));
+                    }
                 }
             }
         });

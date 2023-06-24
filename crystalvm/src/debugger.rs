@@ -85,9 +85,11 @@ impl<'a> Debugger<'a> {
             let arg0 = (raw >> 14 & 0b01111111) as u8;
             let arg1 = (raw >> 7 & 0b01111111) as u8;
             let arg2 = (raw & 0b01111111) as u8;
+            let regs = self.machine.registers.clone();
             let (s0, v0) = self.resolve_arg(arg0);
             let (s1, v1) = self.resolve_arg(arg1);
             let (s2, v2) = self.resolve_arg(arg2);
+            self.machine.registers.clone_from(&regs);
             format!("[{}=0x{:08X} {}=0x{:08X} {}=0x{:08X}]", s0, v0, s1, v1, s2, v2)
         };
 
@@ -112,14 +114,11 @@ impl<'a> Debugger<'a> {
         let mut help = false;
         let mut print_regs = false;
         let mut print_mem = None;
-        let mut n = 0u32;
+        let mut n = None;
         let mut breakpoint = false;
         let mut breakpoint_tag = None;
 
         let r: Result<(), String> = try {
-            if buffer.trim().len() == 0 {
-                n = 1;
-            }
             for arg in buffer.split(',') {
                 let arg = arg.trim();
                 if arg.len() == 0 { continue; }
@@ -130,8 +129,12 @@ impl<'a> Debugger<'a> {
                         Err(format!("Arg formated invalidly `{arg}`"))?;
                     }
                     match a {
-                        "help" => help = b.parse().map_err(|_| format!("could not parse bool for `help={b}`"))?,
+                        "help" => {
+                            if n.is_none() { n = Some(0) };
+                            help = b.parse().map_err(|_| format!("could not parse bool for `help={b}`"))?
+                        },
                         "p" | "print" => {
+                            if n.is_none() { n = Some(0) };
                             print_regs = b == "regs";
                             if b.starts_with("mem:") {
                                 if let Some((start_s, len_s)) = b.split_once(':').unwrap().1.split_once('+') {
@@ -143,7 +146,7 @@ impl<'a> Debugger<'a> {
                                 }
                             }
                         },
-                        "n" => n = string_to_u32(b.to_string()).map_err(|_| format!("could not parse u32 for `n={b}`"))?,
+                        "n" => n = Some(string_to_u32(b.to_string()).map_err(|_| format!("could not parse u32 for `n={b}`"))?),
                         "bp" | "breakpoint" => breakpoint = b.parse().map_err(|_| format!("could not parse bool for `breakpoint={b}`"))?,
                         "bpt" | "breakpoint_tag" => breakpoint_tag = Some(b),
                         _ => Err(format!("Invalid arg `{arg}`"))?
@@ -153,6 +156,7 @@ impl<'a> Debugger<'a> {
                 }
             }
         };
+        let n = n.unwrap_or(1);
         match r {
             Ok(()) => {
                 if help {
@@ -215,9 +219,7 @@ impl<'a> Debugger<'a> {
     }
 
     fn resolve_arg(&mut self, arg: u8) -> (String, u32) {
-        let regs = self.machine.registers.clone();
         let data = self.machine.fetch_data(arg);
-        self.machine.registers.clone_from(&regs);
         (match arg {
             0b01111111 => "literal".to_owned(),
             0b01000000 => "!".to_owned(),

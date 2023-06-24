@@ -49,5 +49,7 @@
     #_ dropreg(counter)
     #_ dropreg(color)
     #_ dropreg(pixel)
+    #_ dropreg(temp)
     #hlt $
         jmp @hlt
+        

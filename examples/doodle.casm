@@ -31,6 +31,10 @@
         
         cmpu @counter 256
         jnz @loop
+
+    move @TEXT_BUF_1 %0
+    stb %0 66
+    
     #_ dropreg(counter)
     #_ dropreg(screen_char)
     #hlt $

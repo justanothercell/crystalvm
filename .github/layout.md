@@ -26,11 +26,10 @@ or 8x8 font (40x25 chars on screen) (1000 * 2)
 32 bit
  00000000111111110000000011111111
          ^^      ^            ^^^
-         EB      MA           CSZ
+         EB      M            CSZ
 Z: Zero/Equal Flag         (jz/jnz)
 S: Sign Flag (1: negative) (jl/lnl)
 C: Carry Flag              (jc/jnc)
-A: Block interrupts: wait triggers once A = 0, device attachments fail and need to be retried
 M: Carry In: whether to carry in the overflow/carry of the last operation for this one
 
 B: Actve buffer (0: buffer 1, 1: buffer 2)

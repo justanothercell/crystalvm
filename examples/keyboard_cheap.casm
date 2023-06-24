@@ -19,6 +19,10 @@
 ; this implementation just expects the first attached device to be the keyboard and thus bypasses all the checks
 
 ~@INTERRUPT
+    #f TEXT_BUF_1+20
+    move @f %0
+    stb %0 65
+
     cmpu %D 0
     jnz @handle
     ret
@@ -44,7 +48,45 @@
 
         #device_read_complete $
             dread %D @KEY_DATA 7
-            breakpoint "i2"
+            
+            #text newreg()
+            #flags newreg()
+            #temp newreg()
+
+            ldb @KEY_DATA_TEXT @text
+            ldb @KEY_DATA_FLAGS @flags
+            ; extract "is_down" bit
+            or @flags 0b1000_0000 @flags
+
+            ; key not down?
+            cmpu @flags 0b1000_0000
+            jnz @update_keys
+
+            ; either new key or pressed status changed?
+            cmpu @KEY_TEXT @text
+            or %F @temp @temp
+            cmpu @KEY_FLAGS @flags
+            or %F @temp @temp
+            and @temp 0b1 @temp
+            ; update Z bit
+            or %F @temp %F
+            ; jump if nothing changed... Z bit was 0 for both comparisons
+            jz @update_keys
+
+            ; update text on screen
+            ld @SCREEN_POS @temp
+            stb @temp @text
+            addu @temp 1 @temp
+            st @SCREEN_POS @temp
+
+            #update_keys $
+            stb @KEY_TEXT @text
+            stb @KEY_FLAGS @flags
+
+            #_ dropreg(text)
+            #_ dropreg(flags)
+            #_ dropreg(temp)
+
             jmp @finish_handling
 
         #device_write_complete $
@@ -55,30 +97,27 @@
         ret
 
 ~@START
-    #counter newreg()
-    #screen_char newreg()
-    
-    move 0u @counter
-    move @TEXT_BUF_1 @screen_char 
-    #loop $
-        stb @screen_char 65
-        addu @screen_char 1 @screen_char
-        addu @counter 1 @counter
-        
-        cmpu @counter 256
-        jnz @loop
-    #_ dropreg(counter)
-    #_ dropreg(screen_char)
     #hlt $
         jmp @hlt
 
 #DATA $ + 16
 ~@DATA
+    #SCREEN_POS $
+        . word @TEXT_BUF_1
+
     #STR_16_BUF $
     . ascii "\0"*16
 
-    #KEYBOARD_STR $
-    . ascii "keyboard\0"
-
     #KEY_DATA $
-    . ascii "\0"*8
+        #KEY_DATA_KEY $
+        . word 0
+        #KEY_DATA_TEXT $
+        . byte 0
+        #KEY_DATA_FLAGS $
+        . byte 0
+
+    #KEY_TEXT $
+    . byte 0
+
+    #KEY_FLAGS $
+    . byte 0
