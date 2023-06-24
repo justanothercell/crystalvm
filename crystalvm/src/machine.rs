@@ -453,7 +453,7 @@ impl Machine {
         let thread_read_memory_ptr = &mut self.memory as *mut _ as usize;
         let interrupt_queue = self.interrupt_queue.clone();
         std::thread::spawn(move || {
-            let memory = unsafe { &mut*(thread_read_memory_ptr as *mut Vec<u8>)};
+            let memory = unsafe { &mut*(thread_read_memory_ptr as *mut Box<Vec<u8>>)};
             loop {
                 let l = {
                     let read = thread_read_device.read().unwrap();
@@ -466,7 +466,6 @@ impl Machine {
                     }
                     if let Some(b) = write.device.write_byte() {
                         memory[write.read_pointer as usize] = b;
-                        println!("wrote {:02X} to {:08X}", memory[write.read_pointer as usize], write.read_pointer);
                         write.read_pointer += 1;
                         write.read_length -= 1;
                         if write.read_length == 0 {
@@ -481,7 +480,7 @@ impl Machine {
         let thread_write_memory_ptr = &mut self.memory as *mut _ as usize;
         let interrupt_queue = self.interrupt_queue.clone();
         std::thread::spawn(move || {
-            let memory = unsafe { &mut*(thread_write_memory_ptr as *mut Vec<u8>)};
+            let memory = unsafe { &mut*(thread_write_memory_ptr as *mut Box<Vec<u8>>)};
             loop {
                 let l = {
                     let read = thread_write_device.read().unwrap();
