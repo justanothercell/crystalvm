@@ -42,55 +42,71 @@
             jmp @finish_handling
 
         #device_read_complete $
-            #text newreg()
+            #ascii newreg()
             #flags newreg()
+            #ascii_old newreg()
+            #flags_old newreg()
             #temp newreg()
 
             breakpoint "i1"
 
-            ldb @text @KEY_DATA_TEXT
+            ldb @ascii @KEY_DATA_ASCII
             ldb @flags @KEY_DATA_FLAGS
             ; extract "is_down" bit
             and @flags 0b1000_0000 @flags
+
+            ld @temp @SCREEN_POS 
+            stb @temp @ascii
+            addu @temp 1 @temp
+            ;#total_chars TEXT_W * TEXT_H
+            ;modu @temp @total_chars @temp
+            st @temp @SCREEN_POS 
+            jmp @update_keys
 
             ; key not down?
             cmpu @flags 0b1000_0000
             jnz @update_keys
 
-            ld %6 @SCREEN_POS 
-            stb %6 66
-            addu %6 1 %6
-            st @SCREEN_POS %6 
-            dread %D @KEY_DATA 7
-            jmp @finish_handling
+            ld @temp @SCREEN_POS 
+            stb @temp @ascii
+            addu @temp 1 @temp
+            #total_chars TEXT_W * TEXT_H
+            modu @temp @total_chars @temp
+            st @temp @SCREEN_POS 
+            jmp @update_keys
 
-            ; either new key or pressed status chawnged?
-            cmpu @KEY_TEXT @text
-            or %F @temp @temp
-            cmpu @KEY_FLAGS @flags
-            or %F @temp @temp
-            and @temp 0b1 @temp
-            ; update Z bit
-            or %F @temp %F
-            ; jump if nothing changed... Z bit was 0 for both comparisons
-            jz @update_keys
+            ; ; either new key or pressed status chawnged?
+            ; ldb @ascii_old @KEY_ASCII
+            ; ldb @flags_old @KEY_FLAGS
+            ; cmpu @ascii_old @ascii
+            ; or %F @temp @temp
+            ; cmpu @flags_old @flags
+            ; or %F @temp @temp
+            ; and @temp 0b1 @temp
+            ; ; update Z bit
+            ; or %F @temp %F
+            ; ; jump if nothing changed... Z bit was 0 for both comparisons
+            ; jz @update_keys
 
             ; update text on screen
-            ld @SCREEN_POS @temp
-            stb @temp @text
+            ld @temp @SCREEN_POS 
+            stb @temp @ascii
             addu @temp 1 @temp
-            #b TEXT_W * TEXT_H
-            modu @temp @b @temp
-            st @SCREEN_POS @temp
+            #total_chars TEXT_W * TEXT_H
+            modu @temp 100 @temp
+            st @SCREEN_POS @temp 
+            jmp @update_keys
 
             #update_keys $
-            stb @KEY_TEXT @text
+            stb @KEY_ASCII @ascii
             stb @KEY_FLAGS @flags
 
             dread %D @KEY_DATA 7
 
-            #_ dropreg(text)
+            #_ dropreg(ascii)
             #_ dropreg(flags)
+            #_ dropreg(ascii_old)
+            #_ dropreg(flags_old)
             #_ dropreg(temp)
 
             jmp @finish_handling
@@ -116,7 +132,11 @@
 
     #KEY_DATA $
         #KEY_DATA_KEY $
-        . word 0
+        . byte 0
+        . byte 0
+        . byte 0
+        #KEY_DATA_ASCII $
+        . byte 0
         #KEY_DATA_TEXT $
         . byte 0
         #KEY_DATA_FLAGS $
@@ -124,8 +144,8 @@
         #KEY_DATA_ZERO $
         . byte 0
 
-    #KEY_TEXT $
+    #KEY_FLAGS $
     . byte 0
 
-    #KEY_FLAGS $
+    #KEY_ASCII $
     . byte 0

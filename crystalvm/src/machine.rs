@@ -432,9 +432,10 @@ impl Machine {
     }
     
     #[inline]
-    pub(crate) fn trigger_interrupt(&mut self, interrupt_t: u32, did: u32) {
+    pub(crate) fn trigger_interrupt(&mut self, interrupt_t: u32, device_id: u32) {
+        println!("interrupt_t = {interrupt_t}, device_id = {device_id}");
         self.registers[REG_Q] = interrupt_t;
-        self.registers[REG_D] = did;
+        self.registers[REG_D] = device_id;
         self.call(INTERRUPT_HANDLER as u32);
     }
 
@@ -466,6 +467,7 @@ impl Machine {
                     }
                     if let Some(b) = write.device.write_byte() {
                         memory[write.read_pointer as usize] = b;
+                        println!("{:?} ...{}", b as char, write.read_length);
                         write.read_pointer += 1;
                         write.read_length -= 1;
                         if write.read_length == 0 {
