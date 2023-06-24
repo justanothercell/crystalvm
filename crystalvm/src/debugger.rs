@@ -90,7 +90,7 @@ impl<'a> Debugger<'a> {
             let (s1, v1) = self.resolve_arg(arg1);
             let (s2, v2) = self.resolve_arg(arg2);
             self.machine.registers.clone_from(&regs);
-            format!("[{}=0x{:08X} {}=0x{:08X} {}=0x{:08X}]", s0, v0, s1, v1, s2, v2)
+            format!("[{:011b} {}=0x{:08X} {}=0x{:08X} {}=0x{:08X}]", instr, s0, v0, s1, v1, s2, v2)
         };
 
         if let Some(line) = self.line_mappings.get(&addr) {

@@ -336,13 +336,13 @@ impl Machine {
             }}, // leave
             0b000_10001110 => linear_instr!{{
                 for i in 0..self.registers.len() {
-                    if i == REG_I || i == REG_F { continue; }
+                    if i == REG_I || i == REG_L || i == REG_S { continue; }
                     self.set_data(0b01000000, self.registers[i])
                 }
             }}, // pshar
             0b000_10001111 => linear_instr!{{
                 for i in (0..self.registers.len()).rev() {
-                    if i == REG_I || i == REG_F { continue; }
+                    if i == REG_I || i == REG_L || i == REG_S { continue; }
                     self.registers[i] = self.fetch_data(0b01000000);
                 }
             }}, // resar
@@ -356,7 +356,6 @@ impl Machine {
                     let mut write = device.write().unwrap();
                     write.read_pointer = ptr;
                     write.read_length = len;
-                    println!("reading: {len}")
                 }
             }}, // dread 
             0b000_11101010 => linear_instr!{{
@@ -387,8 +386,7 @@ impl Machine {
         if reglike == 0b01111111 {
             self.registers[REG_I] += 4;
             self.read_word(self.registers[REG_I])
-        }
-        else if reglike & 0b01000000 > 0 {
+        } else if reglike & 0b01000000 > 0 {
             self.registers[REG_S] -= 4;
             self.read_word(self.registers[REG_S] + 4)
         } else {
@@ -398,7 +396,9 @@ impl Machine {
 
     #[inline]
     pub(crate) fn set_data(&mut self, reglike: u8, data: u32) {
-        if reglike & 0b01000000 > 0 {
+        if reglike == 0b01111111 {
+            panic!("Can't set to literal!")
+        } else if reglike & 0b01000000 > 0 {
             self.registers[REG_S] += 4;
             self.write_word(self.registers[REG_S], data)
         } else {
@@ -433,7 +433,6 @@ impl Machine {
     
     #[inline]
     pub(crate) fn trigger_interrupt(&mut self, interrupt_t: u32, did: u32) {
-        println!("interrupt_t = {interrupt_t}, device_id = {did}");
         self.registers[REG_Q] = interrupt_t;
         self.registers[REG_D] = did;
         self.call(INTERRUPT_HANDLER as u32);
@@ -461,22 +460,21 @@ impl Machine {
                     read.read_length
                 };
                 if l > 0 {
-                    println!("l={l}");
                     let mut write = thread_read_device.write().unwrap();
                     if !write.alive {
                         return;
                     }
                     if let Some(b) = write.device.write_byte() {
                         memory[write.read_pointer as usize] = b;
+                        println!("wrote {:02X} to {:08X}", memory[write.read_pointer as usize], write.read_pointer);
                         write.read_pointer += 1;
                         write.read_length -= 1;
                         if write.read_length == 0 {
-                            println!("read1");
                             interrupt_queue.lock().unwrap().push((INTERRUPT_DEVICE_READ_FINISHED, device_id));
-                            println!("read2");
                         }
                     }
                 }
+                std::thread::yield_now();
             }
         });
         let thread_write_device = attached_device.clone();
@@ -502,6 +500,7 @@ impl Machine {
                         interrupt_queue.lock().unwrap().push((INTERRUPT_DEVICE_WRITE_FINISHED, device_id));
                     }
                 }
+                std::thread::yield_now();
             }
         });
         self.devices.insert(device_id, attached_device);

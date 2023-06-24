@@ -19,10 +19,6 @@
 ; this implementation just expects the first attached device to be the keyboard and thus bypasses all the checks
 
 ~@INTERRUPT
-    #f TEXT_BUF_1+20
-    move @f %0
-    stb %0 65
-
     cmpu %D 0
     jnz @handle
     ret
@@ -40,29 +36,35 @@
 
         #device_connect $
             dread %D @STR_16_BUF 16
-            breakpoint "i1"
             jmp @finish_handling
 
         #device_disconnect $
             jmp @finish_handling
 
         #device_read_complete $
-            dread %D @KEY_DATA 7
-            
             #text newreg()
             #flags newreg()
             #temp newreg()
 
-            ldb @KEY_DATA_TEXT @text
-            ldb @KEY_DATA_FLAGS @flags
+            breakpoint "i1"
+
+            ldb @text @KEY_DATA_TEXT
+            ldb @flags @KEY_DATA_FLAGS
             ; extract "is_down" bit
-            or @flags 0b1000_0000 @flags
+            and @flags 0b1000_0000 @flags
 
             ; key not down?
             cmpu @flags 0b1000_0000
             jnz @update_keys
 
-            ; either new key or pressed status changed?
+            ld %6 @SCREEN_POS 
+            stb %6 66
+            addu %6 1 %6
+            st @SCREEN_POS %6 
+            dread %D @KEY_DATA 7
+            jmp @finish_handling
+
+            ; either new key or pressed status chawnged?
             cmpu @KEY_TEXT @text
             or %F @temp @temp
             cmpu @KEY_FLAGS @flags
@@ -77,11 +79,15 @@
             ld @SCREEN_POS @temp
             stb @temp @text
             addu @temp 1 @temp
+            #b TEXT_W * TEXT_H
+            modu @temp @b @temp
             st @SCREEN_POS @temp
 
             #update_keys $
             stb @KEY_TEXT @text
             stb @KEY_FLAGS @flags
+
+            dread %D @KEY_DATA 7
 
             #_ dropreg(text)
             #_ dropreg(flags)
@@ -114,6 +120,8 @@
         #KEY_DATA_TEXT $
         . byte 0
         #KEY_DATA_FLAGS $
+        . byte 0
+        #KEY_DATA_ZERO $
         . byte 0
 
     #KEY_TEXT $

@@ -154,11 +154,7 @@ impl Device for Keyboard {
             self.sending.append(&mut flags.to_be_bytes().into_iter().collect());
             self.sending.push_back(0);
         }
-        let c = self.sending.pop_front();
-        if let Some(c) = c {
-            println!("{}", char::from(c));
-        }
-        c
+        self.sending.pop_front()
     }
 
     fn receive_byte(&mut self, _: u8) {
