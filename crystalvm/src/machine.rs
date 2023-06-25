@@ -433,7 +433,7 @@ impl Machine {
     
     #[inline]
     pub(crate) fn trigger_interrupt(&mut self, interrupt_t: u32, device_id: u32) {
-        println!("interrupt_t = {interrupt_t}, device_id = {device_id}");
+        // println!("interrupt_t = {interrupt_t}, device_id = {device_id}");
         self.registers[REG_Q] = interrupt_t;
         self.registers[REG_D] = device_id;
         self.call(INTERRUPT_HANDLER as u32);

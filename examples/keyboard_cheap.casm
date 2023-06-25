@@ -48,55 +48,39 @@
             #flags_old newreg()
             #temp newreg()
 
-            breakpoint "i1"
-
             ldb @ascii @KEY_DATA_ASCII
             ldb @flags @KEY_DATA_FLAGS
             ; extract "is_down" bit
             and @flags 0b1000_0000 @flags
 
-            ld @temp @SCREEN_POS 
-            stb @temp @ascii
-            addu @temp 1 @temp
-            ;#total_chars TEXT_W * TEXT_H
-            ;modu @temp @total_chars @temp
-            st @SCREEN_POS @temp 
-            jmp @update_keys
-
             ; key not down?
             cmpu @flags 0b1000_0000
             jnz @update_keys
 
-            ld @temp @SCREEN_POS 
-            stb @temp @ascii
-            addu @temp 1 @temp
-            #total_chars TEXT_W * TEXT_H
-            modu @temp @total_chars @temp
-            st @temp @SCREEN_POS 
-            jmp @update_keys
-
-            ; ; either new key or pressed status chawnged?
-            ; ldb @ascii_old @KEY_ASCII
-            ; ldb @flags_old @KEY_FLAGS
-            ; cmpu @ascii_old @ascii
-            ; or %F @temp @temp
-            ; cmpu @flags_old @flags
-            ; or %F @temp @temp
-            ; and @temp 0b1 @temp
-            ; ; update Z bit
-            ; or %F @temp %F
-            ; ; jump if nothing changed... Z bit was 0 for both comparisons
-            ; jz @update_keys
+            ; either new key or pressed status chawnged?
+            ldb @ascii_old @KEY_ASCII
+            ldb @flags_old @KEY_FLAGS
+            ; if ascii cnaged Z = 1
+            cmpu @ascii_old @ascii
+            or %F @temp @temp
+            ; if flags(pressed) changed Z = 1
+            cmpu @flags_old @flags
+            or %F @temp @temp
+            ; isolate Z bit from temp
+            and @temp 0b1 @temp
+            ; update Z bit of %F from temp
+            or %F @temp %F
+            ; jump if nothing changed... Z bit was 0 for both comparisons
+            jz @update_keys
 
             ; update text on screen
             ld @temp @SCREEN_POS 
             stb @temp @ascii
             addu @temp 1 @temp
-            #total_chars TEXT_W * TEXT_H
-            modu @temp 100 @temp
+            ; #total_chars TEXT_W * TEXT_H
+            ; modu @temp 10 @temp
             st @SCREEN_POS @temp 
-            jmp @update_keys
-
+            
             #update_keys $
             stb @KEY_ASCII @ascii
             stb @KEY_FLAGS @flags
