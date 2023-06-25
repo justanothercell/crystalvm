@@ -60,7 +60,7 @@
             addu @temp 1 @temp
             ;#total_chars TEXT_W * TEXT_H
             ;modu @temp @total_chars @temp
-            st @temp @SCREEN_POS 
+            st @SCREEN_POS @temp 
             jmp @update_keys
 
             ; key not down?

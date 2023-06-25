@@ -467,7 +467,6 @@ impl Machine {
                     }
                     if let Some(b) = write.device.write_byte() {
                         memory[write.read_pointer as usize] = b;
-                        println!("{:?} ...{}", b as char, write.read_length);
                         write.read_pointer += 1;
                         write.read_length -= 1;
                         if write.read_length == 0 {
