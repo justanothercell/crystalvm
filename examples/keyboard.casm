@@ -15,6 +15,9 @@
 #newreg lambda: regids.pop(0)
 #dropreg lambda x: (regids.append(x), regids.sort())
 
+
+; this implementation just expects the first attached device to be the keyboard and thus bypasses all the checks
+
 ~@INTERRUPT
     cmpu %D 0
     jnz @handle
@@ -25,27 +28,78 @@
         cmpu %Q 0b0000
         jz @device_connect
         cmpu %Q 0b0001
-        jz @finish_handling
-        jz %Q 0b0010
-        jmp @finish_handling
-        ; only 0b0011 left
+        jz @device_read_complete
+        cmpu %Q 0b0010
+        jz @device_write_complete
+        ; cmpu %Q 0b0011 -> check redundant, as its the only type left
         jmp @device_disconnect
 
         #device_connect $
             dread %D @STR_16_BUF 16
-            move @STR_16_BUF %20
-            move @KEYBOARD_STR %21
-            call @STRCMP
-            jnz @finish_handling
-            move %D @keyboard_id
+            jmp @finish_handling
 
         #device_disconnect $
             jmp @finish_handling
 
         #device_read_complete $
+            #ascii newreg()
+            #flags newreg()
+            #ascii_old newreg()
+            #flags_old newreg()
+            #temp newreg()
+
+            ldb @ascii @KEY_DATA_ASCII
+            ldb @flags @KEY_DATA_FLAGS
+            ; extract "is_down" bit
+            and @flags 0b1000_0000 @flags
+
+            ; key not down?
+            cmpu @flags 0b1000_0000
+            jnz @update_keys
+
+            ; either new key or pressed status chawnged?
+            ldb @ascii_old @KEY_ASCII
+            ldb @flags_old @KEY_FLAGS
+            ; if ascii cnaged Z = 1
+            cmpu @ascii_old @ascii
+            or %F @temp @temp
+            ; if flags(pressed) changed Z = 1
+            cmpu @flags_old @flags
+            or %F @temp @temp
+            ; isolate Z bit from temp
+            and @temp 0b1 @temp
+            ; update Z bit of %F from temp
+            or %F @temp %F
+            ; jump if nothing changed... Z bit was 0 for both comparisons
+            jz @update_keys
+
+            breakpoint 
+
+            ; update text on screen
+            ld @temp @SCREEN_POS 
+            stb @temp @ascii
+            addu @temp 1 @temp
+            #total_chars TEXT_W * TEXT_H
+            subu @temp @TEXT_BUF_1 @temp
+            modu @temp 10 @temp
+            addu @temp @TEXT_BUF_1 @temp
+            st @SCREEN_POS @temp 
+            
+            #update_keys $
+            stb @KEY_ASCII @ascii
+            stb @KEY_FLAGS @flags
+
+            dread %D @KEY_DATA 7
+
+            #_ dropreg(ascii)
+            #_ dropreg(flags)
+            #_ dropreg(ascii_old)
+            #_ dropreg(flags_old)
+            #_ dropreg(temp)
+
             jmp @finish_handling
 
-        #device_write $
+        #device_write_complete $
             jmp @finish_handling
 
     #finish_handling $
@@ -53,65 +107,33 @@
         ret
 
 ~@START
-    #counter newreg()
-    #screen_char newreg()
-    
-    move 0u @counter
-    move @TEXT_BUF_1 @screen_char 
-    #loop $
-        stb @screen_char 65
-        addu @screen_char 1 @screen_char
-        addu @counter 1 @counter
-        
-        cmpu @counter 256
-        jnz @loop
-    #_ dropreg(counter)
-    #_ dropreg(screen_char)
     #hlt $
         jmp @hlt
 
-; compares two null terminated strings
-; %20: str1
-; %21: str2
-; sets the Z bit of %F to 0 if equal and 1 if inequal. S bit gets modified.
-; %20 and %21 now point to the strings with an offset of the length of the shorter one plus one
-#STRCMP $
-~@STRCMP
-    #STRCMP_str1 "%20"
-    #STRCMP_str2 "%21"
-    #STRCMP_counter newreg()
-    ; save state of used regs
-    move @STRCMP_counter !
-
-    #STRCMP_loop $
-    ~@STRCMP_loop
-        ; are the chars at the current pos equal?
-        cmpu @STRCMP_str1 @STRCMP_str2
-        jnz @STRCMP_end
-
-        ; did str1 (and sine they are equal str2 aswell) have a null char and thus end?
-        cmpu @STRCMP_str1 0u
-        ; increment the str pointers
-        addu @STRCMP_str1 1 @STRCMP_str1
-        addu @STRCMP_str2 1 @STRCMP_str2
-        ; jump if not null (cmpu a few lines above)
-        jnz @STRCMP_loop
-
-    #STRCMP_end $
-    ~@STRCMP_end
-        ; restore state of used regs and return
-        ; %F Z bit should still be set
-        move ! @STRCMP_counter 
-        ret
-    #_ dropreg(STRCMP_counter)
-
 #DATA $ + 16
 ~@DATA
+    #SCREEN_POS $
+        . word @TEXT_BUF_1
+
     #STR_16_BUF $
     . ascii "\0"*16
 
-    #KEYBOARD_STR $
-    . ascii "keyboard\0"
+    #KEY_DATA $
+        #KEY_DATA_KEY $
+        . byte 0
+        . byte 0
+        . byte 0
+        #KEY_DATA_ASCII $
+        . byte 0
+        #KEY_DATA_TEXT $
+        . byte 0
+        #KEY_DATA_FLAGS $
+        . byte 0
+        #KEY_DATA_ZERO $
+        . byte 0
 
-    #keyboard_id $
-    . word 0
+    #KEY_FLAGS $
+    . byte 0
+
+    #KEY_ASCII $
+    . byte 0

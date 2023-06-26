@@ -85,7 +85,6 @@ impl Screen {
                 let text = app::event_text().replace('\r', "\n");
                 let text = if let Some(c) = text.chars().next() { c as u8 } else { 0 };
                 let flags = (app::event_key_down(app::event_original_key()) as u8) << 7 | (app::is_event_alt() as u8) << 3 | (app::is_event_command() as u8) << 2 | (app::is_event_ctrl() as u8) << 1 | (app::is_event_shift() as u8) << 0;
-                println!("{:08b}", flags);
                 *key_data.lock().unwrap() = (key, text, flags);
             }
             life.lock().unwrap().screen_alive = false;
