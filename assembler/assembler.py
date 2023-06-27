@@ -345,7 +345,7 @@ with open(outfile, 'wb') as outbin, open(debug_info_file if debug_info_file is n
                     if type(arg) == str:
                         if arg == '!':
                             b += '1000000'
-                        elif arg[0] == '%' and arg[1:].isnumeric():
+                        elif arg[0] == '%' and all([a in '0123456789abcdefABCDEF' for a in arg[1:]]):
                             n = int(arg[1:], base=16)
                             if n > 48:
                                 raise Exception(f'invalid trg num "{arg}"')
