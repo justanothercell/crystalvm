@@ -1,0 +1,38 @@
+$0
+jump_table:
+    t_main: 
+        .u32 main
+    t_slef: 
+        .u32 @t_slef_handler
+    t_dcon: 
+        .u32 @t_dcon_handler
+    t_ddis: 
+        .u32 @t_ddis_handler
+    t_dfre: 
+        .u32 @t_dfre_handler
+    t_dfwr: 
+        .u32 @t_dfwr_handler
+
+$0xFF
+main:
+    jmp hlt
+hlt:
+    jmp hlt
+t_slef_handler:
+    reti
+t_dcon_handler:
+    reti
+t_ddis_handler:
+    reti
+t_dfre_handler:
+    reti
+t_dfwr_handler:
+    reti
+
+data:
+    message:
+        .str "hello, world"
+    message_len:
+        .u32 len("hello, world")
+    font:
+        .bytes include_bytes("font.raw")
