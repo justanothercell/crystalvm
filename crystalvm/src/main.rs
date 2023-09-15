@@ -1,3 +1,7 @@
+use crystalvm::Machine;
+
+
+
 fn main() {
-    println!("Hello, world!");
+    let mut machine = Machine::run_from_image("../examples/hello_world.cstl", 0x10_000);
 }
