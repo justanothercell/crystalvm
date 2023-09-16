@@ -4,10 +4,25 @@ use crate::thread::ThreadCore;
 
 pub struct Machine {
     pub memory: Box<Vec<u8>>,
-    pub running: Arc<AtomicBool>,
+    pub ctx: Arc<MachineCtx>
+}
+
+pub struct MachineCtx {
+    pub memory: &'static Vec<u8>,
+
     pub threads: HashMap<u32, ThreadCore>,
-    pub thread_count: Arc<AtomicU32>,
-    pub next_thead_id: Arc<AtomicU32>,
+
+    pub running: AtomicBool,
+    pub atomic_lock: AtomicBool,
+    pub thread_count: AtomicU32,
+    pub next_thead_id: AtomicU32,
+}
+
+impl MachineCtx {
+    #[inline]
+    pub fn mem_mut<'a>(&'a self) -> &'a mut Vec<u8> {
+        unsafe { &mut *(self.memory as *const _ as *mut _) }
+    }
 }
 
 impl Machine {
@@ -27,16 +42,24 @@ impl Machine {
         unsafe{ 
             std::ptr::copy_nonoverlapping(image_contents.as_ptr(), memory.as_mut_ptr(), image_contents.len());
         }
-        let running = Arc::new(AtomicBool::new(true));
+        let ctx = Arc::new(MachineCtx { 
+            memory: unsafe { &*(memory.as_ref() as *const _) }, 
+            threads: Default::default(),
+            running: AtomicBool::new(true), 
+            thread_count: AtomicU32::new(0), 
+            next_thead_id: AtomicU32::new(0),
+            atomic_lock: AtomicBool::new(false),
+        });
         Machine {  
-            memory
+            memory,
+            ctx
         }
     }
 }
 
 impl Drop for Machine {
     fn drop(&mut self) {
-        self.running.store(false, Ordering::Release);
-        while self.thread_count.load(Ordering::Relaxed) > 0 { std::thread::yield_now() }
+        self.ctx.running.store(false, Ordering::Release);
+        while self.ctx.thread_count.load(Ordering::Relaxed) > 0 { std::thread::yield_now() }
     }
 }
