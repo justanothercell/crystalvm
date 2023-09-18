@@ -1,3 +1,5 @@
+mod instructions;
+
 use std::{sync::{Arc, atomic::{Ordering, AtomicU8}}, collections::HashMap};
 
 use crate::machine::MachineCtx;
@@ -26,12 +28,7 @@ pub const FLAG_BIT_Z: u32 = 1 << 0;
 pub const FLAG_BIT_S: u32 = 1 << 1;
 /// carry: an operation over or underflowed/produced a carry value
 pub const FLAG_BIT_C: u32 = 1 << 2;
-/// karry (signed carry): an operation over or underflowed/produced a carry value
-pub const FLAG_BIT_K: u32 = 1 << 2;
-///
-/// 
-/// 
-/// 
+
 
 pub struct ThreadCore {
     machine: Arc<MachineCtx>,
@@ -84,7 +81,7 @@ impl ThreadCore {
             if self.state.load(Ordering::Relaxed) == 2 { return; }
         }
     }
-    fn execute_instr()
+
     #[inline]
     fn atomic_op<F: FnOnce(u32) -> u32>(&self, addr: u32, f: F) {
         while self.machine.atomic_lock.swap(true, Ordering::SeqCst) { std::thread::yield_now() }
