@@ -26,15 +26,15 @@ impl MachineCtx {
 }
 
 impl Machine {
-    pub fn run_from_image<P: AsRef<Path>>(path: P, memory_size: usize) -> Self {
+    pub fn from_image<P: AsRef<Path>>(path: P, memory_size: u32) -> Self {
         let mut image = File::open(path).unwrap();
         let img_size = image.stream_len().unwrap() as usize;
         let mut image_contents = Vec::with_capacity(img_size);
         image.read_to_end(&mut image_contents).unwrap();
-        if memory_size < img_size {
+        if memory_size < img_size as u32 {
             panic!("need at least 0x{:X} bytes, only got 0x{:X} supplied", img_size, memory_size)
         }
-        let mut memory = Box::new(Vec::with_capacity(memory_size));
+        let mut memory = Box::new(Vec::with_capacity(memory_size as usize));
         // actually zero initialize it
         for _ in 0..memory_size {
             memory.push(0);
