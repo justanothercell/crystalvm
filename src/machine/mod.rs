@@ -1,6 +1,10 @@
+pub(crate) mod thread;
+pub(crate) mod device;
+
 use std::{path::Path, fs::File, io::{Seek, Read}, collections::HashMap, sync::{Arc, atomic::{AtomicBool, AtomicU32, Ordering}}};
 
-use crate::thread::ThreadCore;
+use self::thread::ThreadCore;
+
 
 pub struct Machine {
     pub memory: Box<Vec<u8>>,
@@ -10,7 +14,7 @@ pub struct Machine {
 pub struct MachineCtx {
     pub memory: &'static Vec<u8>,
 
-    pub threads: HashMap<u32, ThreadCore>,
+    pub threads: HashMap<u32, Arc<ThreadCore>>,
 
     pub running: AtomicBool,
     pub atomic_lock: AtomicBool,
@@ -22,6 +26,10 @@ impl MachineCtx {
     #[inline]
     pub fn mem_mut<'a>(&'a self) -> &'a mut Vec<u8> {
         unsafe { &mut *(self.memory as *const _ as *mut _) }
+    }
+    #[inline]
+    pub(crate) unsafe fn mutator(&self) -> &mut Self {
+        &mut *(self as *const _ as *mut _)
     }
 }
 
@@ -54,6 +62,10 @@ impl Machine {
             memory,
             ctx
         }
+    }
+
+    pub fn run(mut self) {
+        ThreadCore::launch_main(&mut self);
     }
 }
 
