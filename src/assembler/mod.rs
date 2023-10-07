@@ -1,6 +1,8 @@
+mod expression;
+
 use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable};
 
-use crate::machine::thread::instructions::{INSTR_JMP, INSTR_JNZ};
+use self::expression::{Expression, collect_expr};
 
 pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result<(), Error> {
     let instrs = parse_file(file_in)?;
@@ -24,26 +26,45 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
         if tokens.len() == index { Ok(()) }
         else { Err(Error(format!("Invalid instruction syntax, surplus argument"), loc.cloned())) }
     }
-    fn get<'a>(tokens: &'a Vec<Token>, index: usize, loc: Option<&Loc>) -> Result<&'a Token, Error> {
-        tokens.get(index).ok_or_else(|| Error(format!("Invalid instruction syntax, expected another argument"), loc.cloned()))
+    macro_rules! assert_ended {
+        ($index: expr) => { {
+            if tokens.len() < $index { panic!("Index should be less than or equal to tokens length! Try testing for a smaller index!") }
+            if tokens.len() == $index { Ok(()) }
+            else { Err(Error(format!("Invalid instruction syntax, surplus argument {:?}", tokens[$index]), loc.cloned())) }
+        }? };
     }
-    Ok(match get(&tokens, 0, loc)? {
+    macro_rules! get {
+        ($index: expr) => {
+            tokens.get($index).ok_or_else(|| Error(format!("Invalid instruction syntax, expected another argument"), loc.cloned()))?
+        };
+        ($index: expr => $variant: ident) => {
+            match tokens.get($index).ok_or_else(|| Error(format!("Invalid instruction syntax, expected another argument"), loc.cloned()))? {
+                Token::$variant(v) => Ok(v),
+                other => Err(Error(format!("Expected token type {}, got {:?}", stringify!($variant), other), loc.cloned()))
+            }?
+        };
+    }
+    Ok(match get!(0) {
         Token::Control('@') => Instruction::Location(),
-        Token::Control('.') => if let Token::Ident(dtype) = get(&tokens, 1, loc)? {
+        Token::Control('.') => if let Token::Ident(dtype) = get!(1) {
             match dtype.as_str() {
-                "ascii" => Instruction::Data(Data::Ascii(todo!())),
-                "f32" => Instruction::Data(Data::F32(todo!())),
-                "u32" => Instruction::Data(Data::U32(todo!())),
-                "i32" => Instruction::Data(Data::I32(todo!())),
-                "u16" => Instruction::Data(Data::U16(todo!())),
-                "i16" => Instruction::Data(Data::I16(todo!())),
-                "u8" => Instruction::Data(Data::U8(todo!())),
-                "i8" => Instruction::Data(Data::I8(todo!())),
+                "ascii" => {
+                    let ascii = get!(2 => Ascii);
+                    assert_ended!(3);
+                    Instruction::Data(Data::Ascii(ascii.clone()))
+                }
+                "f32" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::F32(Some(Box::new(expr)), None)) },
+                "u32" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::U32(Some(Box::new(expr)), None)) },
+                "i32" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::I32(Some(Box::new(expr)), None)) },
+                "u16" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::U16(Some(Box::new(expr)), None)) },
+                "i16" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::I16(Some(Box::new(expr)), None)) },
+                "u8" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::U8(Some(Box::new(expr)), None)) },
+                "i8" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::I8(Some(Box::new(expr)), None)) },
                 _ => Err(Error(format!("Invalid data type `.{dtype}`"), loc.cloned()))?
             }
         } else { Err(Error(format!("Invalid instruction syntax, expected `.ascii`, `.f32`, `.u32`, `.i32`, ``.u16`, `.i16`, .`u8` or .`i8`"), loc.cloned()))? },
-        Token::Ident(ident) => if let Token::Control(':') = get(&tokens, 1, loc)? {
-            assert_ended(&tokens, 2, loc)?;
+        Token::Ident(ident) => if let Token::Control(':') = get!(1) {
+            assert_ended!(2);
             Instruction::Label(ident.clone())
         } else { 
             Instruction::Command()
@@ -55,10 +76,7 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
 fn tokenize_lines(lines: Vec<(Loc, String)>) -> Result<Vec<(Loc, Vec<Token>)>, Error> {
     let mut tokens = vec![];
     for (loc, line) in lines {
-        println!("in: {line:?}");
         let t = tokenize(&line, Some(&loc))?;
-        println!("out: {t:?}");
-        println!();
         if t.len() == 0 { continue; }
         tokens.push((loc, t));
     }
@@ -93,13 +111,28 @@ enum Instruction {
 #[derive(Debug)]
 enum Data {
     Ascii(String),
-    F32(f32),
-    U32(u32),
-    I32(i32),
-    U16(u16),
-    I16(i16),
-    U8(u8),
-    I8(i8)
+    F32(Option<Box<Expression>>, Option<f32>),
+    U32(Option<Box<Expression>>, Option<u32>),
+    I32(Option<Box<Expression>>, Option<i32>),
+    U16(Option<Box<Expression>>, Option<u16>),
+    I16(Option<Box<Expression>>, Option<i16>),
+    U8(Option<Box<Expression>>, Option<u8>),
+    I8(Option<Box<Expression>>, Option<i8>)
+}
+
+impl Data {
+    fn ty(&self) -> &'static str {
+        match self {
+            Data::Ascii(_) => "ascii",
+            Data::F32(_, _) => "f32",
+            Data::U32(_, _) => "u32",
+            Data::I32(_, _) => "i32",
+            Data::U16(_, _) => "u16",
+            Data::I16(_, _) => "i16",
+            Data::U8(_, _) => "u8",
+            Data::I8(_, _) => "i8",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -108,7 +141,9 @@ enum Arg {
     Literal(u32)
 }
 
-#[derive(Debug)]
+
+
+#[derive(Debug, PartialEq)]
 enum Token {
     Ident(String),
     UnsignedInteger(u32, u32),
