@@ -1,4 +1,4 @@
-@0x00 //comment
+@0x00
 main:
     set %0 message
     set %1 0
@@ -7,7 +7,7 @@ main:
         cmp %1 0
         jz print_end
         print %1
-        add %0 0
+        add %0 1
         cmp %0 %1
     jmp print_loop
     print_end:

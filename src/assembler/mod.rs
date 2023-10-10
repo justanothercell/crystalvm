@@ -2,10 +2,13 @@ mod expression;
 
 use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable};
 
-use self::expression::{Expression, collect_expr};
+use self::expression::{Expression, collect_expr, Op, Value};
 
 pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result<(), Error> {
     let instrs = parse_file(file_in)?;
+    for (_, i) in instrs {
+        println!("{i:?}")
+    }
     Ok(())
 }
 
@@ -21,11 +24,6 @@ fn parse_file<'a>(file: impl AsRef<Path>) -> Result<Vec<(Loc, Instruction)>, Err
 }
 
 fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, Error> {
-    fn assert_ended(tokens: &Vec<Token>, index: usize, loc: Option<&Loc>) -> Result<(), Error> {
-        if tokens.len() < index { panic!("index should be less than or equal to tokens length! Try testing for a smaller index!") }
-        if tokens.len() == index { Ok(()) }
-        else { Err(Error(format!("Invalid instruction syntax, surplus argument"), loc.cloned())) }
-    }
     macro_rules! assert_ended {
         ($index: expr) => { {
             if tokens.len() < $index { panic!("Index should be less than or equal to tokens length! Try testing for a smaller index!") }
@@ -37,33 +35,48 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
         ($index: expr) => {
             tokens.get($index).ok_or_else(|| Error(format!("Invalid instruction syntax, expected another argument"), loc.cloned()))?
         };
+        (? $index: expr) => {
+            tokens.get($index)
+        };
         ($index: expr => $variant: ident) => {
             match tokens.get($index).ok_or_else(|| Error(format!("Invalid instruction syntax, expected another argument"), loc.cloned()))? {
                 Token::$variant(v) => Ok(v),
                 other => Err(Error(format!("Expected token type {}, got {:?}", stringify!($variant), other), loc.cloned()))
             }?
         };
+        (? $index: expr => $variant: ident) => {
+            match tokens.get($index) {
+                Some(Token::$variant(v)) => Some(v),
+                _ => None
+            }
+        };
     }
     Ok(match get!(0) {
-        Token::Control('@') => Instruction::Location(),
-        Token::Control('.') => if let Token::Ident(dtype) = get!(1) {
+        Token::Control('$') => { 
+            let label = get!(1 => Ascii); 
+            let (expr, i) = collect_expr(&tokens, 1, loc)?;
+            assert_ended!(i);
+            Instruction::Variable(label.to_string(), expr, None)
+        },
+        Token::Control('@') => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Location(expr) },
+        Token::Control('.') => if let Some(dtype) = get!(? 1 => Ident) {
             match dtype.as_str() {
                 "ascii" => {
                     let ascii = get!(2 => Ascii);
                     assert_ended!(3);
                     Instruction::Data(Data::Ascii(ascii.clone()))
                 }
-                "f32" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::F32(Some(Box::new(expr)), None)) },
-                "u32" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::U32(Some(Box::new(expr)), None)) },
-                "i32" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::I32(Some(Box::new(expr)), None)) },
-                "u16" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::U16(Some(Box::new(expr)), None)) },
-                "i16" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::I16(Some(Box::new(expr)), None)) },
-                "u8" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::U8(Some(Box::new(expr)), None)) },
-                "i8" => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i+1); Instruction::Data(Data::I8(Some(Box::new(expr)), None)) },
+                "f32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::F32(Box::new(expr), None)) },
+                "u32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U32(Box::new(expr), None)) },
+                "i32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I32(Box::new(expr), None)) },
+                "u16" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U16(Box::new(expr), None)) },
+                "i16" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I16(Box::new(expr), None)) },
+                "u8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U8(Box::new(expr), None)) },
+                "i8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I8(Box::new(expr), None)) },
                 _ => Err(Error(format!("Invalid data type `.{dtype}`"), loc.cloned()))?
             }
-        } else { Err(Error(format!("Invalid instruction syntax, expected `.ascii`, `.f32`, `.u32`, `.i32`, ``.u16`, `.i16`, .`u8` or .`i8`"), loc.cloned()))? },
-        Token::Ident(ident) => if let Token::Control(':') = get!(1) {
+        } else { Err(Error(format!("Invalid instruction syntax, expected `.ascii`, `.f32`, `.u32`, `.i32`, `.u16`, `.i16`, `.u8` or `.i8`"), loc.cloned()))? },
+        Token::Ident(ident) => if get!(? 1 => Control) == Some(&':') {
             assert_ended!(2);
             Instruction::Label(ident.clone())
         } else { 
@@ -94,7 +107,7 @@ fn read_lines(file: impl AsRef<Path>) -> Result<Vec<(Loc, String)>, Error> {
 }
 
 #[derive(Debug, Clone)]
-struct Loc {
+pub(crate) struct Loc {
     code: Rc<String>,
     file: Rc<PathBuf>,
     line: usize
@@ -102,7 +115,8 @@ struct Loc {
 
 #[derive(Debug)]
 enum Instruction {
-    Location(),
+    Variable(String, Expression, Option<Value>),
+    Location(Expression),
     Label(String),
     Command(),
     Data(Data)
@@ -111,13 +125,13 @@ enum Instruction {
 #[derive(Debug)]
 enum Data {
     Ascii(String),
-    F32(Option<Box<Expression>>, Option<f32>),
-    U32(Option<Box<Expression>>, Option<u32>),
-    I32(Option<Box<Expression>>, Option<i32>),
-    U16(Option<Box<Expression>>, Option<u16>),
-    I16(Option<Box<Expression>>, Option<i16>),
-    U8(Option<Box<Expression>>, Option<u8>),
-    I8(Option<Box<Expression>>, Option<i8>)
+    F32(Box<Expression>, Option<f32>),
+    U32(Box<Expression>, Option<u32>),
+    I32(Box<Expression>, Option<i32>),
+    U16(Box<Expression>, Option<u16>),
+    I16(Box<Expression>, Option<i16>),
+    U8(Box<Expression>, Option<u8>),
+    I8(Box<Expression>, Option<i8>)
 }
 
 impl Data {
@@ -144,7 +158,7 @@ enum Arg {
 
 
 #[derive(Debug, PartialEq)]
-enum Token {
+pub(crate)enum Token {
     Ident(String),
     UnsignedInteger(u32, u32),
     SignedInteger(i32, u32),

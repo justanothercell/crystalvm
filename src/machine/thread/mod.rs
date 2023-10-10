@@ -41,24 +41,13 @@ pub const FLAG_BIT_C: u32 = 1 << FLAG_PLACE_C;
 pub const FLAG_PLACE_E: u32 = 3;
 /// Error flag: permission/access/out of bounds/invalid arg
 pub const FLAG_BIT_E: u32 = 1 << FLAG_PLACE_E;
-/// floating point operation: -inf
+/// floating point: -inf
 pub const FLAG_PLACE_M: u32 = 4;
-/// floating point operation: -inf
-pub const FLAG_BIT_M: u32 = 1 << FLAG_PLACE_M;
-/// floating point operation: inf
-pub const FLAG_PLACE_I: u32 = 5;
-/// floating point operation: inf
-pub const FLAG_BIT_I: u32 = 1 << FLAG_PLACE_I;
-/// floating point operation: nan
-pub const FLAG_PLACE_N: u32 = 6;
-/// floating point operation: nan
-pub const FLAG_BIT_N: u32 = 1 << FLAG_PLACE_N;
 /// integer division by zero
-pub const FLAG_PLACE_L: u32 = 7;
+pub const FLAG_PLACE_L: u32 = 5;
 /// integer division by zero
 pub const FLAG_BIT_L: u32 = 1 << FLAG_PLACE_L;
 
-pub const FLAG_MASK_FLOAT_DIV_ERR: u32 = FLAG_BIT_M | FLAG_BIT_I | FLAG_BIT_N;
 
 pub struct ThreadCore {
     machine: Arc<MachineCtx>,
