@@ -13,17 +13,15 @@ pub const REG_I: u32 = 0x30;
 pub const REG_W: u32 = 0x31;
 /// Stack Pointer
 pub const REG_S: u32 = 0x32;
-/// Interrupt Table
-pub const REG_T: u32 = 0x33;
 /// Flags Register
-pub const REG_F: u32 = 0x34;
+pub const REG_F: u32 = 0x33;
 /// Interrupting Device ID
-pub const REG_D: u32 = 0x35;
+pub const REG_D: u32 = 0x34;
 /// carry/overflow/underflow/shift in/out
-pub const REG_C: u32 = 0x36;
+pub const REG_C: u32 = 0x35;
 
 // last reg + 1
-pub const NUM_REGS: u32 = 0x37;
+pub const NUM_REGS: u32 = 0x36;
 
 // Flags
 /// zero: Z = a == b
@@ -75,7 +73,7 @@ impl ThreadCore {
             children: Default::default(),
             state: AtomicU8::new(0),
             access_min_addr: 0,
-            access_max_addr: machine.memory.len() as u32,
+            access_max_addr: machine.ctx.memory.len() as u32,
             permissions: !0,
             thread_id: id,
             parent_thread_id: 0,

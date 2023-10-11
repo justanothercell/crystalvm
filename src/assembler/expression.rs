@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{Token, Error, Loc, Data};
+use super::{Token, Error, Loc};
 
 pub(crate) fn collect_expr(tokens: &Vec<Token>, start: usize, loc: Option<&Loc>) -> Result<(Expression, usize), Error> {
     macro_rules! get {
@@ -107,12 +107,18 @@ pub(crate) enum Expression {
 }
 
 impl Expression {
-    pub(crate) fn eval(&self, vars: HashMap<String, Value>) -> Value {
-        todo!()
+    pub(crate) fn eval(&self, vars: &HashMap<String, Value>) -> Value {
+        match self {
+            Expression::Variable(v) => vars.get(v).expect(v).clone(),
+            Expression::Value(v) => v.clone(),
+            Expression::UnaryOp(_, _) => todo!(),
+            Expression::BinOp(_, _, _) => todo!(),
+            Expression::FnCall(_, _) => todo!(),
+        }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Value {
     UnsignedInteger(u32),
     SignedInteger(i32),
@@ -127,34 +133,13 @@ impl Value {
             Value::Float(_) => "float",
         }
     }
-}
 
-impl Value {
-    fn copy_into(&self, mut dummy: Data, loc: Option<&Loc>) -> Result<Data, Error> {
-        let d = dummy.ty();
-        match dummy {
-            Data::Ascii(_) => Err(Error(format!("Value may not be of type `ascii`, expected `{}`", dummy.ty()), loc.cloned()))?,
-            _ => (),
-        }
+    pub(crate) fn to_le_bytes(&self) -> [u8;4]{
         match self {
-            Value::UnsignedInteger(u) => match dummy {
-                Data::U32(_, ref mut v) => *v = Some(*u),
-                Data::U16(_, ref mut v) => *v = Some((*u).try_into().map_err(|_| Error(format!("`{}` with value `{}`/`{:X}` does not fit into `{}`", self.ty(), u, u, d), loc.cloned()))?),
-                Data::U8(_, ref mut v) => *v = Some((*u).try_into().map_err(|_| Error(format!("`{}` with value `{}`/`{:X}` does not fit into `{}`", self.ty(), u, u, d), loc.cloned()))?),
-                _ => Err(Error(format!("Expected `{}`, found value `{}`/`{:X}` of kind `{}`", dummy.ty(), u, u, self.ty()), loc.cloned()))?
-            },
-            Value::SignedInteger(i) => match dummy {
-                Data::I32(_, ref mut v) => *v = Some(*i),
-                Data::I16(_, ref mut v) => *v = Some((*i).try_into().map_err(|_| Error(format!("`{}` with value `{}`/`{:X}` does not fit into `{}`", self.ty(), i, i, d), loc.cloned()))?),
-                Data::I8(_, ref mut v) => *v = Some((*i).try_into().map_err(|_| Error(format!("`{}` with value `{}`/`{:X}` does not fit into `{}`", self.ty(), i, i, d), loc.cloned()))?),
-                _ => Err(Error(format!("Expected `{}`, found value `{}`/`{:X}` of kind `{}`", dummy.ty(), i, i, self.ty()), loc.cloned()))?
-            },
-            Value::Float(f) => match dummy {
-                Data::F32(_, ref mut v) => *v = Some(*f),
-                _ => Err(Error(format!("Expected `{}`, found value `{}` of kind `{}`", dummy.ty(), f, self.ty()), loc.cloned()))?
-            },
+            Value::UnsignedInteger(u) => u.to_le_bytes(),
+            Value::SignedInteger(i) => i.to_le_bytes(),
+            Value::Float(f) => f.to_le_bytes(),
         }
-        Ok(dummy)
     }
 }
 

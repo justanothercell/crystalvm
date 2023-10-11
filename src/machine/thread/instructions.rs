@@ -35,6 +35,18 @@ macro_rules! define_instructions {
             } }
         }
         pub(crate) use impl_instructions_match; 
+        #[allow(unused)]
+        pub fn instr_name_id_map() -> std::collections::HashMap<&'static str, u32>{
+            let mut map = std::collections::HashMap::default();
+            $( map.insert($instr_str, $instr); )*
+            map
+        }
+        #[allow(unused)]
+        pub fn instr_id_name_map() -> std::collections::HashMap<u32, &'static str>{
+            let mut map = std::collections::HashMap::default();
+            $( map.insert($instr, $instr_str,); )*
+            map
+        }
     };
 }
 
@@ -267,7 +279,7 @@ define_instructions! {
     // note: memory instructions follow the order convention of `instr source destination`
     instr INSTR_LD { INSTR_LD_STR = ld; impl_func!(thread |a: u32| thread.read_u32(a) => (r: u32 => [write to reg b])); "load source_addr dest_reg"; }
     instr INSTR_ST { INSTR_ST_STR = st; impl_func!(thread |a: u32, b: u32| thread.write_u32(a, b) => ()); "store source_reg_or_val dest_addr"; }
-    instr INSTR_CP { INSTR_CP_STR = cp; impl_func!(thread |a: u32| a => (r: u32 => [write to reg b])); "copy source_reg_or_val dest_reg"; }
+    instr INSTR_MOV { INSTR_MOV_STR = mov; impl_func!(thread |a: u32| a => (r: u32 => [write to reg b])); "move/copy source_reg_or_val dest_reg"; }
     // we can write unchecked, since b was validated on load
     instr INSTR_LD8 { INSTR_LD8_STR = ld8; impl_func!(thread |a: u32, b: u32 as x| x & !0xFF | thread.read_u8(a) as u32 => (r: u32 => [unchecked write to reg b])); "load 8 bytes source_addr dest_reg, leaving upper 3 bytes of reguntouched"; }
     instr INSTR_ST8 { INSTR_ST8_STR = st8; impl_func!(thread |a: u32, b: u32| thread.write_u8(a, b as u8) => ()); "store 8 bytes source_reg_or_val dest_addr, ignoring upper 3 bytes of reg"; }

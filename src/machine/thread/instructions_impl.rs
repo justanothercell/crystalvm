@@ -7,7 +7,12 @@ impl ThreadCore {
     #[allow(unused)]
     pub(crate) fn exec_instr(&self) {
         let (instr, a, b, c) = Self::split_instr(self.read_u32(self.read_reg_unchecked(REG_I as u8)));
+        //let instr_map = instr_id_name_map();
+        //println!("{:?} {:?} {:?} {:?} {:?}", instr, instr_map.get(&instr), a, b, c);
         self.advance_ip();
         impl_instructions_match!(self, instr, a, b, c);
+        //println!("{:?}", self.registers);
+        //todo!();
      }
 }
+

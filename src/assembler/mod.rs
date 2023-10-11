@@ -1,14 +1,80 @@
 mod expression;
 
-use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable};
+use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable, fs::File, io::Write, collections::HashMap};
+
+use crate::machine::thread::{REG_C, REG_D, REG_F, REG_S, REG_W, REG_I, instructions::instr_name_id_map};
 
 use self::expression::{Expression, collect_expr, Op, Value};
 
 pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result<(), Error> {
     let instrs = parse_file(file_in)?;
-    for (_, i) in instrs {
+    for (_, i) in &instrs {
         println!("{i:?}")
     }
+    let mut code = vec![];
+    let instr_map = instr_name_id_map();
+    let mut labels = HashMap::new();
+    let mut addr = 0;
+    for (_, i) in &instrs {
+        match i {
+            Instruction::Variable(_, _, _) => todo!(),
+            Instruction::Location(_) => todo!(),
+            Instruction::Label(l) => { let _ = labels.insert(l.to_string(), Value::UnsignedInteger(addr)); },
+            Instruction::Command(_, args) => {
+                addr += 4;
+                for a in args {
+                match a {
+                    Arg::Expr(_) => addr += 4,
+                    Arg::Register(_) => (),
+                }
+            }},
+            Instruction::Data(d) => match d {
+                Data::Ascii(s) => addr += s.len() as u32,
+                Data::F32(_) => addr += 4,
+                Data::U32(_) => addr += 4,
+                Data::I32(_) => addr += 4,
+                Data::U16(_) => addr += 2,
+                Data::I16(_) => addr += 2,
+                Data::U8(_) => addr += 1,
+                Data::I8(_) => addr += 1,
+            },
+        }
+    }
+    println!("Labled:");
+    for (label, i) in &labels {
+        println!("  {label}: {i:?}");
+    }
+    println!("Assembling:");
+    for (_, i) in &instrs {
+        match i {
+            Instruction::Variable(_, _, _) => (),
+            Instruction::Location(_) => todo!(),
+            Instruction::Label(_) => (),
+            Instruction::Command(cmd, args) => {
+                print!("{cmd}");
+                let mut command = *instr_map.get(cmd.as_str()).expect(cmd);
+                let mut lit_args = vec![];
+                for a in args { 
+                    match a {
+                        Arg::Expr(e) => {  print!(" {:?}", e.eval(&labels));command = command << 7 | 0b0111_1111; lit_args.push(e.eval(&labels)); },
+                        Arg::Register(r) => { print!(" %{r}"); command = command << 7 | r; },
+                    }
+                }
+                println!();
+                command = command << (7 * (3-args.len()));
+                code.append(&mut command.to_le_bytes().into_iter().collect());
+                for a in lit_args {
+                    code.append(&mut a.to_le_bytes().into_iter().collect());
+                }
+            },
+            Instruction::Data(d) => match d {
+                Data::Ascii(s) => code.append(&mut s.clone().into_bytes()),
+                _ => todo!()
+            },
+        }
+    }
+    let mut binfile = File::create(file_out).unwrap();
+    binfile.write_all(&code).unwrap();
     Ok(())
 }
 
@@ -58,7 +124,7 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
             assert_ended!(i);
             Instruction::Variable(label.to_string(), expr, None)
         },
-        Token::Control('@') => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Location(expr) },
+        Token::Control('@') => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i); Instruction::Location(expr) },
         Token::Control('.') => if let Some(dtype) = get!(? 1 => Ident) {
             match dtype.as_str() {
                 "ascii" => {
@@ -66,21 +132,46 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
                     assert_ended!(3);
                     Instruction::Data(Data::Ascii(ascii.clone()))
                 }
-                "f32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::F32(Box::new(expr), None)) },
-                "u32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U32(Box::new(expr), None)) },
-                "i32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I32(Box::new(expr), None)) },
-                "u16" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U16(Box::new(expr), None)) },
-                "i16" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I16(Box::new(expr), None)) },
-                "u8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U8(Box::new(expr), None)) },
-                "i8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I8(Box::new(expr), None)) },
+                "f32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::F32(Box::new(expr))) },
+                "u32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U32(Box::new(expr))) },
+                "i32" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I32(Box::new(expr))) },
+                "u16" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U16(Box::new(expr))) },
+                "i16" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I16(Box::new(expr))) },
+                "u8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::U8(Box::new(expr))) },
+                "i8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I8(Box::new(expr))) },
                 _ => Err(Error(format!("Invalid data type `.{dtype}`"), loc.cloned()))?
             }
         } else { Err(Error(format!("Invalid instruction syntax, expected `.ascii`, `.f32`, `.u32`, `.i32`, `.u16`, `.i16`, `.u8` or `.i8`"), loc.cloned()))? },
         Token::Ident(ident) => if get!(? 1 => Control) == Some(&':') {
             assert_ended!(2);
             Instruction::Label(ident.clone())
-        } else { 
-            Instruction::Command()
+        } else {
+            let mut args = vec![];
+            let mut index = 1;
+            while index < tokens.len() {
+                if get!(? index => Control) == Some(&'%') {
+                    let r = match get!(index + 1) {
+                        Token::Ident(i) => match i.as_str() {
+                            "I" => REG_I,   
+                            "W" => REG_W, 
+                            "S" => REG_S, 
+                            "F" => REG_F, 
+                            "D" => REG_D, 
+                            "C" => REG_C,
+                            other =>  Err(Error(format!("Invalid token for register after `%`: `{other}`, expected either base 10 unsigned integer [0..47] or one of the following: `I`, `W`, `S`, `F`, `D`, `C`"), loc.cloned()))?
+                        },
+                        Token::UnsignedInteger(r @ 0..=47, 10) => *r,
+                        other => Err(Error(format!("Invalid token for register after `%`: `{other:?}`, expected either base 10 unsigned integer [0..47] or one of the following: `I`, `W`, `S`, `F`, `D`, `C`"), loc.cloned()))?
+                    };
+                    args.push(Arg::Register(r));
+                    index += 2;
+                } else {
+                    let (expr, i) = collect_expr(&tokens, index, loc)?;
+                    args.push(Arg::Expr(expr));
+                    index = i;
+                }
+            }
+            Instruction::Command(ident.to_string(), args)
         },
         _ => Err(Error(format!("Invalid instruction syntax"), loc.cloned()))?
     })
@@ -114,48 +205,46 @@ pub(crate) struct Loc {
 }
 
 #[derive(Debug)]
+enum Arg {
+    Expr(Expression),
+    Register(u32)
+}
+
+#[derive(Debug)]
 enum Instruction {
     Variable(String, Expression, Option<Value>),
     Location(Expression),
     Label(String),
-    Command(),
+    Command(String, Vec<Arg>),
     Data(Data)
 }
 
 #[derive(Debug)]
 enum Data {
     Ascii(String),
-    F32(Box<Expression>, Option<f32>),
-    U32(Box<Expression>, Option<u32>),
-    I32(Box<Expression>, Option<i32>),
-    U16(Box<Expression>, Option<u16>),
-    I16(Box<Expression>, Option<i16>),
-    U8(Box<Expression>, Option<u8>),
-    I8(Box<Expression>, Option<i8>)
+    F32(Box<Expression>),
+    U32(Box<Expression>),
+    I32(Box<Expression>),
+    U16(Box<Expression>),
+    I16(Box<Expression>),
+    U8(Box<Expression>),
+    I8(Box<Expression>)
 }
 
 impl Data {
     fn ty(&self) -> &'static str {
         match self {
             Data::Ascii(_) => "ascii",
-            Data::F32(_, _) => "f32",
-            Data::U32(_, _) => "u32",
-            Data::I32(_, _) => "i32",
-            Data::U16(_, _) => "u16",
-            Data::I16(_, _) => "i16",
-            Data::U8(_, _) => "u8",
-            Data::I8(_, _) => "i8",
+            Data::F32(_) => "f32",
+            Data::U32(_) => "u32",
+            Data::I32(_) => "i32",
+            Data::U16(_) => "u16",
+            Data::I16(_) => "i16",
+            Data::U8(_) => "u8",
+            Data::I8(_) => "i8",
         }
     }
 }
-
-#[derive(Debug)]
-enum Arg {
-    Register(u32),
-    Literal(u32)
-}
-
-
 
 #[derive(Debug, PartialEq)]
 pub(crate)enum Token {

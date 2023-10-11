@@ -1,13 +1,13 @@
 @0x00
 main:
-    set %0 message
-    set %1 0
+    mov message %0
+    mov 0 %1
     print_loop:
-        ld8 %1 %0
+        ld8 %0 %1 
         cmp %1 0
         jz print_end
-        print %1
-        add %0 1
+        write_stdout %1
+        add %0 1 %0
         cmp %0 %1
     jmp print_loop
     print_end:
