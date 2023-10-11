@@ -1,4 +1,5 @@
 pub(crate) mod instructions;
+pub(crate) mod instructions_impl;
 
 use std::{sync::{Arc, atomic::{Ordering, AtomicU8}}, collections::HashMap};
 
