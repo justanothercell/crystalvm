@@ -31,7 +31,8 @@ impl MachineCtx {
     #[inline]
     pub(crate) unsafe fn mutator(&self) -> &mut Self {
         #[allow(mutable_transmutes)]
-        std::mem::transmute(self)
+        #[allow(invalid_reference_casting)]
+        &mut *(self as *const _ as *mut _)
     }
 }
 

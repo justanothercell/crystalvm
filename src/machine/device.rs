@@ -36,7 +36,7 @@ impl Console {
             output: std::io::stdout() 
         }
     }
-} 
+}
 
 impl Device for Console {
     fn read8(&mut self) -> u8 {

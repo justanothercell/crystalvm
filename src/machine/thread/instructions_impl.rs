@@ -12,7 +12,6 @@ impl ThreadCore {
         self.advance_ip();
         impl_instructions_match!(self, instr, a, b, c);
         //println!("{:?}", self.registers);
-        //todo!();
      }
 }
 
