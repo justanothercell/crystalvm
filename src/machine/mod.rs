@@ -24,11 +24,14 @@ pub struct MachineCtx {
 impl MachineCtx {
     #[inline]
     pub fn mem_mut<'a>(&'a self) -> &'a mut Vec<u8> {
+        #[allow(mutable_transmutes)]
+        #[allow(invalid_reference_casting)]
         unsafe { &mut *(&*self.memory as *const _ as *mut _) }
     }
     #[inline]
     pub(crate) unsafe fn mutator(&self) -> &mut Self {
-        &mut *(self as *const _ as *mut _)
+        #[allow(mutable_transmutes)]
+        std::mem::transmute(self)
     }
 }
 

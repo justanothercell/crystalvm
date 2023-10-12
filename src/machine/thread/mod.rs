@@ -229,7 +229,8 @@ impl ThreadCore {
 
     #[inline]
     pub unsafe fn mutator(&self) -> &mut Self {
-        &mut *(self as *const _ as *mut _)
+        #[allow(mutable_transmutes)]
+        std::mem::transmute(self)
     }
 }
 

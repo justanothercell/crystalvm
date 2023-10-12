@@ -141,7 +141,7 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
     }
     Ok(match get!(0) {
         Token::Control('$') => { 
-            let label = get!(1 => Ascii); 
+            let label = get!(1 => Ident); 
             let (expr, i) = collect_expr(&tokens, 1, loc)?;
             assert_ended!(i);
             Instruction::Variable(label.to_string(), expr, None)
