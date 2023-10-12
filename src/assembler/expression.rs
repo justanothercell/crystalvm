@@ -31,7 +31,7 @@ pub(crate) fn collect_expr(tokens: &Vec<Token>, start: usize, loc: Option<&Loc>)
                     index += 1;
                 }
                 index += 1;
-                (Expression::FnCall(var.to_string(), args), index + 1)
+                (Expression::FnCall(var.to_string(), args), index)
             } else {
                 (Expression::Variable(var.to_string()), start + 1)
             }
@@ -97,6 +97,54 @@ pub(crate) fn collect_expr(tokens: &Vec<Token>, start: usize, loc: Option<&Loc>)
     })
 }
 
+macro_rules! matching_ty_op {
+    ($ain: expr, $bin: expr, $loc: ident, $( [$($ty: ident)|+]|$a: ident, $b: ident| $expr: expr ),+) => { {
+        let ax = $ain;
+        let bx = $bin;
+        Ok( 
+            match (ax, bx) {
+                $(
+                    $( (Value::$ty($a), Value::$ty($b)) => Value::$ty($expr), )+
+                )+
+                (a, b) => Err(Error(format!("{} does not equal type {} in expression", a.ty(), b.ty()), $loc.cloned()))?
+            }
+        )?
+    } };
+}
+
+pub(crate)fn expr_funcs_map() -> HashMap<&'static str, fn(Vec<Value>, Option<&Loc>) -> Result<Value, Error>> {
+    let mut map: HashMap<&'static str, fn(Vec<Value>, Option<&Loc>) -> Result<Value, Error>> = HashMap::new();
+    macro_rules! assert_len {
+        ($v: ident >= $len: expr, $loc: ident) => {
+            if $v.len() < $len { Err(Error(format!("Expected at least {} args, got {}", $v.len(), $len), None))? }
+        };
+        ($v: ident == $len: expr, $loc: ident) => {
+            if $v.len() != $len { Err(Error(format!("Expected exactly {} args, got {}", $v.len(), $len), None))? }
+        };
+    }
+    map.insert("min", |v, loc| { 
+        assert_len!(v >= 1, loc); 
+        let init = Ok(v[0].clone());
+        v.into_iter().fold(init, 
+        |acc, a| Ok(matching_ty_op!(acc?, a, loc, [UnsignedInteger | SignedInteger | Float] |a, b| a.min(b))))
+    });
+    map.insert("max", |v, loc| { 
+        assert_len!(v >= 1, loc); 
+        let init = Ok(v[0].clone());
+        v.into_iter().fold(init, 
+        |acc, a| Ok(matching_ty_op!(acc?, a, loc, [UnsignedInteger |SignedInteger | Float] |a, b| a.max(b))))
+    });
+    map.insert("div_ceil", |v, loc| { 
+        assert_len!(v == 2, loc); 
+        Ok(matching_ty_op!(&v[0], &v[1], loc, [UnsignedInteger | SignedInteger] |a, b| a.div_ceil(*b)))
+    });
+    map.insert("align", |v, loc| { 
+        assert_len!(v == 2, loc); 
+        Ok(matching_ty_op!(&v[0], &v[1], loc, [UnsignedInteger] |a, b| a.div_ceil(*b) * b))
+    });
+    map
+}
+
 #[derive(Debug)]
 pub(crate) enum Expression {
     Variable(String),
@@ -107,14 +155,40 @@ pub(crate) enum Expression {
 }
 
 impl Expression {
-    pub(crate) fn eval(&self, vars: &HashMap<String, Value>) -> Value {
-        match self {
-            Expression::Variable(v) => vars.get(v).expect(v).clone(),
-            Expression::Value(v) => v.clone(),
-            Expression::UnaryOp(_, _) => todo!(),
-            Expression::BinOp(_, _, _) => todo!(),
-            Expression::FnCall(_, _) => todo!(),
-        }
+    pub(crate) fn eval(&self, vars: &HashMap<String, Value>, funcs: &HashMap<&'static str, fn(Vec<Value>, Option<&Loc>) -> Result<Value, Error>>, loc: Option<&Loc>) -> Result<Value, Error> {
+        Ok(match self {
+            Expression::Variable(v) => vars.get(v).cloned().ok_or_else(|| Error(format!("Unrecognized variable `{v}`"), loc.cloned()))?,
+            Expression::Value(v) => v.clone(), 
+            Expression::UnaryOp(op, e) => match e.eval(vars, funcs, loc)? { 
+                Value::UnsignedInteger(u) => match op { UnaryOp::Neg =>Err(Error(format!("Cannot use unary neg (-) on type unsigned int `{u}`"), loc.cloned()))?, UnaryOp::Not => Value::UnsignedInteger(!u) }
+                Value::SignedInteger(i) =>  match op { UnaryOp::Neg => Value::SignedInteger(-i), UnaryOp::Not => Value::SignedInteger(!i) }
+                Value::Float(f) =>  match op { UnaryOp::Neg => Value::Float(-f), UnaryOp::Not => Err(Error(format!("Cannot use unary not (~) on type float `{f}`"), loc.cloned()))? } 
+            }
+            Expression::BinOp(op, a, b) => 
+                matching_ty_op!(a.eval(vars, funcs, loc)?, b.eval(vars, funcs, loc)?, loc, 
+                    [UnsignedInteger | SignedInteger] |a, b| match op {
+                        Op::Add => a + b,
+                        Op::Sub => a - b,
+                        Op::Mul => a * b,
+                        Op::Div => a / b,
+                        Op::Mod => a % b,
+                        Op::And => a & b,
+                        Op::Or => a | b,
+                        Op::Xor => a ^ b,
+                    },
+                    [Float] |a, b| match op {
+                        Op::Add => a + b,
+                        Op::Sub => a - b,
+                        Op::Mul => a * b,
+                        Op::Div => a / b,
+                        Op::Mod => a % b,
+                        op => Err(Error(format!("Cannot perform op on floats `{a} {op:?} {b}`"), loc.cloned()))?
+                    }
+                ),
+            Expression::FnCall(ident, args) => (funcs.get(ident.as_str()).ok_or_else(|| Error(format!("Unrecognized function `{ident}`"), loc.cloned()))?)(
+                args.into_iter().map(|e| e.eval(vars, funcs, loc)).collect::<Result<Vec<_>, _>>()?, loc
+            ).map_err(|e| e.at(loc.cloned()))?,
+        })
     }
 }
 
@@ -177,14 +251,4 @@ impl Op {
 pub(crate) enum UnaryOp {
     Neg,
     Not
-}
-
-impl UnaryOp {
-    fn from_char(c: char, loc: Option<&Loc>) -> Result<Self, Error>{
-        Ok(match c {
-            '-' => UnaryOp::Neg,
-            '~' => UnaryOp::Not,
-            _ => Err(Error(format!("Invalid unary operator `{c}` in expression"), loc.cloned()))?
-        })
-    }
 }

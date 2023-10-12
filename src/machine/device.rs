@@ -1,76 +1,53 @@
-use std::io::{Write, Read};
+use std::{io::{Write, Read, Stdout}, process::Stdio};
 
-pub struct MemRead<'a> {
-    slice: &'a[u8],
-    index: usize
-}
+use getch::Getch;
 
-impl<'a> Iterator for MemRead<'a> {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.slice.len() {
-            self.index += 1;
-            Some(self.slice[self.index - 1])
-        } else { None }
-    }
-}
-
-impl<'a> Read for MemRead<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        for (i, b) in buf.iter_mut().enumerate() {
-            if self.index < self.slice.len() {
-                self.index += 1;
-                *b = self.slice[self.index - 1];
-            } else { return Ok(i) }
-            self.index += 1;
-        }
-        Ok(buf.len())
-    }
-}
-
-// Write bytes to memory.
-// `write` never errors and returns `Ok(0)` 
-pub struct MemWrite<'a> {
-    slice: &'a mut [u8],
-    index: usize
-}
-
-impl<'a> Write for MemWrite<'a> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        for (i, b) in buf.iter().enumerate() {
-            if self.index < self.slice.len() {
-                self.index += 1;
-                self.slice[self.index - 1] = *b;
-            } else { return Ok(i) }
-            self.index += 1;
-        }
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-
+/// Operations on invalid device id return immediately, setting FLAG_BIT_E.
+/// A device should never panic, instead just return 0.
 pub trait Device {
-    // read from a slice of memory
-    fn read(&mut self, data: MemRead);
-    // write to a slice of memory
-    fn write(&mut self, data: MemWrite);
+    /// read from device. may block until data arrives
+    fn read(&mut self) -> u32 {
+        (self.read8() as u32) << 24 | (self.read8() as u32) << 16 | (self.read8() as u32) << 8 | (self.read8() as u32)
+    }
+    /// write to device
+    fn write(&mut self, data: u32) {
+        self.write8((data >> 24) as u8);
+        self.write8((data >> 16) as u8);
+        self.write8((data >> 8) as u8);
+        self.write8(data as u8);
+    }
+    /// read from device. may block until data arrives
+    fn read8(&mut self) -> u8;
+    /// write to device
+    fn write8(&mut self, data: u8);
+    fn flush_read(&mut self);
+    fn flush_write(&mut self);
 }
 
 struct Console {
+    input: Getch,
+    output: Stdout
+}
 
+impl Console {
+    pub fn new() -> Self {
+        Self { 
+            input: Getch::new(), 
+            output: std::io::stdout() 
+        }
+    }
 }
 
 impl Device for Console {
-    fn read(&mut self, data: MemRead) {
-        std::io::stdout().write_all(&data.collect::<Vec<_>>()[..]).unwrap();
+    fn read8(&mut self) -> u8 {
+        self.input.getch().unwrap_or(0)
     }
 
-    fn write(&mut self, _data: MemWrite) {
-        
+    fn write8(&mut self, data: u8) {
+        let _ = self.output.write_all(&[data]);
     }
+
+    fn flush_read(&mut self) { }
+
+    fn flush_write(&mut self) { let _ = self.output.flush();}
 }

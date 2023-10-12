@@ -3,6 +3,7 @@
 #![feature(bigint_helper_methods)]
 #![feature(try_blocks)]
 #![feature(macro_metavar_expr)]
+#![feature(int_roundings)]
 
 
 pub(crate) mod machine;

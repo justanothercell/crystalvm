@@ -2,7 +2,7 @@ mod expression;
 
 use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable, fs::File, io::Write, collections::HashMap};
 
-use crate::machine::thread::{REG_C, REG_D, REG_F, REG_S, REG_W, REG_I, instructions::instr_name_id_map};
+use crate::{machine::thread::{REG_C, REG_D, REG_F, REG_S, REG_W, REG_I, instructions::instr_name_id_map}, assembler::expression::expr_funcs_map};
 
 use self::expression::{Expression, collect_expr, Op, Value};
 
@@ -13,12 +13,21 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
     }
     let mut code = vec![];
     let instr_map = instr_name_id_map();
+    let func_map = expr_funcs_map();
     let mut labels = HashMap::new();
     let mut addr = 0;
-    for (_, i) in &instrs {
+    for (loc, i) in &instrs {
         match i {
             Instruction::Variable(_, _, _) => todo!(),
-            Instruction::Location(_) => todo!(),
+            Instruction::Location(e) => {
+                let l = match e.eval(&labels, &func_map, Some(&loc))? {
+                    Value::UnsignedInteger(u) => u,
+                    // should not be that way due to checks earlier
+                    other => Err(Error(format!("@Location expects value of type unsized integer, found {other:?}"), Some(loc.clone())))?
+                };
+                if l < addr { Err(Error(format!("Location @{l} is already behind current addr: {addr}"), Some(loc.clone())))? }
+                addr = l
+            },
             Instruction::Label(l) => { let _ = labels.insert(l.to_string(), Value::UnsignedInteger(addr)); },
             Instruction::Command(_, args) => {
                 addr += 4;
@@ -45,10 +54,21 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
         println!("  {label}: {i:?}");
     }
     println!("Assembling:");
-    for (_, i) in &instrs {
+    for (loc, i) in &instrs {
         match i {
             Instruction::Variable(_, _, _) => (),
-            Instruction::Location(_) => todo!(),
+            Instruction::Location(e) => {
+                let l = match e.eval(&labels, &func_map, Some(&loc))? {
+                    Value::UnsignedInteger(u) => u,
+                    // should not be a case due to checks earlier
+                    _ => unreachable!()
+                };
+                // should be that way due to checks earlier
+                assert!(l >= code.len() as u32);
+                while (code.len() as u32) < l {
+                    code.push(0);
+                }
+            },
             Instruction::Label(_) => (),
             Instruction::Command(cmd, args) => {
                 print!("{cmd}");
@@ -56,7 +76,7 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
                 let mut lit_args = vec![];
                 for a in args { 
                     match a {
-                        Arg::Expr(e) => {  print!(" {:?}", e.eval(&labels));command = command << 7 | 0b0111_1111; lit_args.push(e.eval(&labels)); },
+                        Arg::Expr(e) => { let v = e.eval(&labels, &func_map, Some(&loc))?; print!(" {v:?}");command = command << 7 | 0b0111_1111; lit_args.push(v); },
                         Arg::Register(r) => { print!(" %{r}"); command = command << 7 | r; },
                     }
                 }
@@ -73,8 +93,10 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
             },
         }
     }
+    println!("Writing to file...");
     let mut binfile = File::create(file_out).unwrap();
     binfile.write_all(&code).unwrap();
+    println!("Finished!");
     Ok(())
 }
 
@@ -372,8 +394,10 @@ fn str_to_num_lit(n: &str, loc: Option<&Loc>) -> Result<Token, Error>{
 pub struct Error(String, Option<Loc>);
 
 impl Error {
-    fn at(mut self, loc: Loc) -> Self {
-        self.1 = Some(loc);
+    fn at(mut self, loc: Option<Loc>) -> Self {
+        if loc.is_some() {
+            self.1 = loc;
+        }
         self
     }
 }
