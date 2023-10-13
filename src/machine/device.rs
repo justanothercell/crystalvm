@@ -20,8 +20,7 @@ pub trait Device {
     fn read8(&mut self) -> u8;
     /// write to device
     fn write8(&mut self, data: u8);
-    fn flush_read(&mut self);
-    fn flush_write(&mut self);
+    fn flush(&mut self);
 }
 
 struct Console {
@@ -47,7 +46,5 @@ impl Device for Console {
         let _ = self.output.write_all(&[data]);
     }
 
-    fn flush_read(&mut self) { }
-
-    fn flush_write(&mut self) { let _ = self.output.flush();}
+    fn flush(&mut self) { let _ = self.output.flush();}
 }

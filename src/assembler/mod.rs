@@ -2,7 +2,7 @@ mod expression;
 
 use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable, fs::File, io::Write, collections::HashMap};
 
-use crate::{machine::thread::{REG_C, REG_D, REG_F, REG_S, REG_W, REG_I, instructions::instr_name_id_map}, assembler::expression::expr_funcs_map};
+use crate::{machine::thread::{REG_C, REG_F, REG_S, REG_I, REG_B, instructions::instr_name_id_map}, assembler::expression::expr_funcs_map};
 
 use self::expression::{Expression, collect_expr, Op, Value};
 
@@ -175,10 +175,9 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
                     let r = match get!(index + 1) {
                         Token::Ident(i) => match i.as_str() {
                             "I" => REG_I,   
-                            "W" => REG_W, 
+                            "B" => REG_B, 
                             "S" => REG_S, 
                             "F" => REG_F, 
-                            "D" => REG_D, 
                             "C" => REG_C,
                             other =>  Err(Error(format!("Invalid token for register after `%`: `{other}`, expected either base 10 unsigned integer [0..47] or one of the following: `I`, `W`, `S`, `F`, `D`, `C`"), loc.cloned()))?
                         },

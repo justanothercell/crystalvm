@@ -9,19 +9,17 @@ use super::MachineCtx;
 
 /// Instruction Pointer
 pub const REG_I: u32 = 0x30;
-/// Frame Pointer
-pub const REG_W: u32 = 0x31;
+/// Frame Base Pointer
+pub const REG_B: u32 = 0x31;
 /// Stack Pointer
 pub const REG_S: u32 = 0x32;
 /// Flags Register
 pub const REG_F: u32 = 0x33;
-/// Interrupting Device ID
-pub const REG_D: u32 = 0x34;
 /// carry/overflow/underflow/shift in/out
-pub const REG_C: u32 = 0x35;
+pub const REG_C: u32 = 0x34;
 
 // last reg + 1
-pub const NUM_REGS: u32 = 0x36;
+pub const NUM_REGS: u32 = 0x35;
 
 // Flags
 /// zero: Z = a == b
@@ -141,7 +139,7 @@ impl ThreadCore {
     #[inline]
     pub(crate)fn write_u8(&self, addr: u32, value: u8) {
         if addr >= self.access_min_addr && addr < self.access_max_addr {
-            self.machine.mem_mut()[addr as usize] = value;
+            unsafe { self.machine.mem_mut()[addr as usize] = value; }
         } else {
             unsafe { self.mutator().registers[REG_F as usize] |= FLAG_BIT_E; }
         }
@@ -159,25 +157,7 @@ impl ThreadCore {
     pub(crate)fn write_u32(&self, addr: u32, value: u32) {
         if addr >= self.access_min_addr && addr + 3 < self.access_max_addr {
             let value = value.to_le_bytes();
-            unsafe { std::ptr::copy_nonoverlapping(&value as *const [u8;4] as *mut _, (self.machine.mem_mut() as *mut _ as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>()); }
-        } else {
-            unsafe { self.mutator().registers[REG_F as usize] |= FLAG_BIT_E; }
-        }
-    }
-    #[inline]
-    pub(crate)fn read_f32(&self, addr: u32) -> f32 {
-        if addr >= self.access_min_addr && addr + 3 < self.access_max_addr {
-            unsafe { f32::from_le_bytes(self.machine.memory[addr as usize .. addr as usize + 4].try_into().unwrap_unchecked()) }
-        } else {
-            unsafe { self.mutator().registers[REG_F as usize] |= FLAG_BIT_E; }
-            0.0
-        }
-    }
-    #[inline]
-    pub(crate)fn write_f32(&self, addr: u32, value: f32) {
-        if addr >= self.access_min_addr && addr + 3 < self.access_max_addr {
-            let value = value.to_le_bytes();
-            unsafe { std::ptr::copy_nonoverlapping(&value as *const [u8;4] as *mut _, (self.machine.mem_mut() as *mut _ as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>()); }
+            unsafe { std::ptr::copy_nonoverlapping(&value as *const [u8;4] as *mut _, (self.machine.mem_mut().as_ptr() as usize + addr as usize) as *mut u8, std::mem::size_of::<u32>()); }
         } else {
             unsafe { self.mutator().registers[REG_F as usize] |= FLAG_BIT_E; }
         }
@@ -187,8 +167,13 @@ impl ThreadCore {
         unsafe { 
             let mutor = self.mutator();
             if reg == 0b0111_1111 {
-                let v = self.read_u32(self.read_reg_unchecked(REG_I as u8));
+                let v = self.read_u32(self.registers[REG_I as usize]);
                 self.advance_ip();
+                return v;
+            }
+            if reg == 0b0111_1110 {
+                let v = self.read_u32(mutor.registers[REG_S as usize]);
+                mutor.registers[REG_S as usize] -= 1;
                 return v;
             }
             if reg < NUM_REGS as u8 {
@@ -200,23 +185,20 @@ impl ThreadCore {
         }
     }
     #[inline]
-    pub(crate) fn write_reg(&self, reg: u8, val: u32) {
+    pub(crate) fn write_arg(&self, reg: u8, val: u32) {
         unsafe { 
             let mutor = self.mutator();
+            if reg == 0b0111_1110 {
+                mutor.registers[REG_S as usize] += 1;
+                self.write_u32(mutor.registers[REG_S as usize], val);
+                return;
+            }
             if reg < NUM_REGS as u8 {
                 mutor.registers[reg as usize] = val;
             } else {
                 mutor.registers[REG_F as usize] |= FLAG_BIT_E;
             }
         }
-    }
-    #[inline]
-    pub(crate) fn read_reg_unchecked(&self, reg: u8) -> u32 {
-        self.registers[reg as usize]
-    }
-    #[inline]
-    pub(crate) fn write_reg_unchecked(&self, reg: u8, val: u32) {
-        unsafe { self.mutator().registers[reg as usize] = val; }
     }
     #[inline]
     pub(crate) fn advance_ip(&self) {
@@ -229,7 +211,6 @@ impl ThreadCore {
 
     #[inline]
     pub unsafe fn mutator(&self) -> &mut Self {
-        #[allow(mutable_transmutes)]
         #[allow(invalid_reference_casting)]
         &mut *(self as *const _ as *mut _)
     }

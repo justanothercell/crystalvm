@@ -1,20 +1,61 @@
 @0x00
+mov stack %S
 main:
-    mov message %0
-    mov 0 %1
-    print_loop:
-        ld8 %0 %1 
-        cmp %1 0
-        jz print_end
+    mov message %47
+    call print
+    repl:
+        read_stdin %1
+        cmp %1 3 // CTRL+C
+        jz repl_end
+        cmp %1 13 // \r
+        jz carriage_return_handler
+        cmp %1 8 // backspace
+        jz backspace_handler
+        jmp handler_end
+        ctrlc_handler:
+            jmp repl_end
+        carriage_return_handler:
+            mov 10 %1
+            jmp handler_end
+        backspace_handler:
+            write_stdout %1
+            mov 32 %1 // whitespace
+            write_stdout %1
+            mov 8 %1 // backspace again
+        handler_end:
         write_stdout %1
-        add %0 1 %0
-        cmp %0 %1
-    jmp print_loop
-    print_end:
+        flush_stdout
+        jmp repl
+    repl_end:
+    mov message2 %47
+    call print
 hlt:
     jmp hlt
-code_end:
-@align(code_end, 0x10)
+
+// Prints a null terminated string
+// Args
+//   %47 - message addr
+// Uses
+//   %46 - printed char, lowest byte 0 on return
+//   %47 - char addr, points to end of string on return
+print:
+    _print_loop:
+        ld8 %47 %46
+        cmp %46 0
+        jz _print_end
+        write_stdout %46
+        add %47 1 %47
+    jmp _print_loop
+    _print_end:
+        ret
+
+instr_end:
+@align(instr_end, 0x10)
 data:
     message:
-        .ascii "hello, world\n\0"
+        .ascii "hello, world\nStarting repl...\n\0"
+    message2:
+        .ascii "Stopping via CTRL+C!\nPress again to shutdown!\n\0"
+data_end:
+@align(data_end, 0x10)
+stack:

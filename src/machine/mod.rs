@@ -23,14 +23,12 @@ pub struct MachineCtx {
 
 impl MachineCtx {
     #[inline]
-    pub fn mem_mut<'a>(&'a self) -> &'a mut Vec<u8> {
-        #[allow(mutable_transmutes)]
+    pub(crate) unsafe  fn mem_mut<'a>(&'a self) -> &'a mut Vec<u8> {
         #[allow(invalid_reference_casting)]
-        unsafe { &mut *(&*self.memory as *const _ as *mut _) }
+        unsafe { &mut *(&*self.memory as *const Vec<u8> as *mut Vec<u8>) }
     }
     #[inline]
     pub(crate) unsafe fn mutator(&self) -> &mut Self {
-        #[allow(mutable_transmutes)]
         #[allow(invalid_reference_casting)]
         &mut *(self as *const _ as *mut _)
     }

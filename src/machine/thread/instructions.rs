@@ -59,10 +59,7 @@ macro_rules! carry_handler {
 
 macro_rules! impl_arith_ret {
     ($self: ident, $ret: ident, $ret_ty: ident, write to reg $reg: ident) => {
-        $self.write_reg($reg, unsafe { std::mem::transmute::<$ret_ty, u32>($ret) });
-    };
-    ($self: ident, $ret: ident, $ret_ty: ident, unchecked write to reg $reg: ident) => {
-        $self.write_reg_unchecked($reg, unsafe { std::mem::transmute::<$ret_ty, u32>($ret) });
+        $self.write_arg($reg, unsafe { std::mem::transmute::<$ret_ty, u32>($ret) });
     };
     ($self: ident, $ret: ident, bool, overflow) => {
         unsafe {
@@ -79,7 +76,7 @@ macro_rules! impl_arith_ret {
     };
     ($self: ident, $ret: ident, $ret_ty: ident, write to reg $reg: ident as $inner_ty: ident and on error $err_flag: ident) => {
         match $ret{
-            Some(res) => $self.write_reg($reg, unsafe { std::mem::transmute::<$inner_ty, u32>(res) }),
+            Some(res) => $self.write_arg($reg, unsafe { std::mem::transmute::<$inner_ty, u32>(res) }),
             None => unsafe { $self.mutator().registers[REG_F as usize] |= $err_flag }
         }
     }
@@ -111,22 +108,22 @@ macro_rules! impl_func {
 macro_rules! impl_jump {
     ($self: ident jump $a: ident) => { {
         let a = $self.read_arg($a);
-        $self.write_reg_unchecked(REG_I as u8, a);
+        unsafe {  $self.mutator().registers[REG_I as usize] = a; }
     } };
     ($self: ident jump $a: ident if $mask: ident) => { {
         let a = $self.read_arg($a);
-        if $self.read_reg_unchecked(REG_F as u8) & $mask != 0 {
-            $self.write_reg_unchecked(REG_I as u8, a);
+        if $self.registers[REG_F as usize] & $mask != 0 {
+            unsafe {  $self.mutator().registers[REG_I as usize] = a; }
         }
     } };
     ($self: ident jump $a: ident unless $mask: ident) => { {
         let a = $self.read_arg($a);
-        if $self.read_reg_unchecked(REG_F as u8) & $mask == 0 {
-            $self.write_reg_unchecked(REG_I as u8, a);
+        if $self.registers[REG_F as usize] & $mask == 0 {
+            unsafe {  $self.mutator().registers[REG_I as usize] = a; }
         }
     } };
     ($self: ident clear $mask: ident) => { {
-        $self.write_reg_unchecked(REG_F as u8, $self.read_reg_unchecked(REG_F as u8) & !$mask)
+        unsafe {  $self.mutator().registers[REG_F as usize] &= !$mask; }
     } };
 }
 
@@ -254,7 +251,28 @@ define_instructions! {
         else { mutor.registers[REG_F as usize] &= !FLAG_BIT_S; }
     } => ()); "f32: cmp(a, b), FLAG_BIT_Z if a == b, FLAG_BIT_S if a < b "; }
 
-    instr INSTR_JMP { INSTR_JMP_STR = jmp; impl_jump!(thread jump a); "jump"; }
+    instr INSTR_JMP { INSTR_JMP_STR = jmp; impl_jump!(thread jump a); "jump to addr"; }
+    instr INSTR_CALL { INSTR_CALL_STR = call; unsafe {
+        let mutor = thread.mutator();
+        let addr = mutor.read_arg(a);
+        mutor.registers[REG_S as usize] += 1;
+        let base = mutor.registers[REG_S as usize];
+        mutor.write_u32(mutor.registers[REG_S as usize], mutor.registers[REG_I as usize]);
+        mutor.registers[REG_S as usize] += 1;
+        mutor.write_u32(mutor.registers[REG_S as usize], mutor.registers[REG_B as usize]);
+        mutor.registers[REG_B as usize] = base;
+        mutor.registers[REG_I as usize] = addr;
+    }; "call a function at addr which returns via `ret`, adding a stack frame"; }
+    instr INSTR_RET { INSTR_RET_STR = ret;  unsafe {
+        let mutor = thread.mutator();
+        mutor.registers[REG_S as usize] = mutor.registers[REG_B as usize];
+        let ret_i = mutor.read_u32(mutor.registers[REG_S as usize]);
+        let base = mutor.read_u32(mutor.registers[REG_S as usize] + 1);
+        mutor.registers[REG_I as usize] = ret_i;
+        mutor.registers[REG_B as usize] = base;
+        mutor.registers[REG_S as usize] -= 1;
+    }; "return from a function, removing a stack frame"; }
+    
     
     instr INSTR_JZ { INSTR_JZ_STR = jz; impl_jump!(thread jump a if FLAG_BIT_Z); "jump if FLAG_BIT_Z is set"; }
     instr INSTR_JNZ { INSTR_JNZ_STR = jnz; impl_jump!(thread jump a unless FLAG_BIT_Z); "jump if FLAG_BIT_Z is unset"; }
@@ -277,10 +295,19 @@ define_instructions! {
     instr INSTR_READ_STDIN { INSTR_READ_STDIN_STR = read_stdin; impl_func!(thread || getch::Getch::new().getch().unwrap_or_else(|_| unsafe { thread.mutator().registers[REG_F as usize] |= FLAG_BIT_E; 0 }) as u32 => (r: u32 => [write to reg a])); "Wait for a char on stdin. Sets FLAG_BIT_E if errors while getting."; }
 
     // note: memory instructions follow the order convention of `instr source destination`
-    instr INSTR_LD { INSTR_LD_STR = ld; impl_func!(thread |a: u32| thread.read_u32(a) => (r: u32 => [write to reg b])); "load source_addr dest_reg"; }
-    instr INSTR_ST { INSTR_ST_STR = st; impl_func!(thread |a: u32, b: u32| thread.write_u32(a, b) => ()); "store source_reg_or_val dest_addr"; }
-    instr INSTR_MOV { INSTR_MOV_STR = mov; impl_func!(thread |a: u32| a => (r: u32 => [write to reg b])); "move/copy source_reg_or_val dest_reg"; }
-    // we can write unchecked, since b was validated on load
-    instr INSTR_LD8 { INSTR_LD8_STR = ld8; impl_func!(thread |a: u32, b: u32 as x| x & !0xFF | thread.read_u8(a) as u32 => (r: u32 => [unchecked write to reg b])); "load 8 bytes source_addr dest_reg, leaving upper 3 bytes of reguntouched"; }
-    instr INSTR_ST8 { INSTR_ST8_STR = st8; impl_func!(thread |a: u32, b: u32| thread.write_u8(a, b as u8) => ()); "store 8 bytes source_reg_or_val dest_addr, ignoring upper 3 bytes of reg"; }
+    instr INSTR_LD { INSTR_LD_STR = ld; impl_func!(thread |a: u32| thread.read_u32(a) => (r: u32 => [write to reg b])); "load source_addr dest_reg_or_stack"; }
+    instr INSTR_ST { INSTR_ST_STR = st; impl_func!(thread |a: u32, b: u32| thread.write_u32(a, b) => ()); "store source_reg_stack_or_val dest_addr"; }
+    instr INSTR_MOV { INSTR_MOV_STR = mov; impl_func!(thread |a: u32| a => (r: u32 => [write to reg b])); "move source_reg_stack_or_val dest_reg_or_stack"; }
+    instr INSTR_SWAP { INSTR_SWAP_STR = swap; impl_func!(thread |a: u32 as ax, b: u32 as bx| (bx, ax) => (ar: u32 => [write to reg a], br: u32 => [write to reg b])); "swap source_reg dest_reg_or_stack"; }
+    instr INSTR_LD8 { INSTR_LD8_STR = ld8; impl_func!(thread |a: u32| thread.read_u8(a) as u32 => (r: u32 => [write to reg b])); "load 8 bytes source_addr dest_reg_or_stack, zeroing upper 3 bytes of reg"; }
+    instr INSTR_ST8 { INSTR_ST8_STR = st8; impl_func!(thread |a: u32, b: u32| thread.write_u8(a, b as u8) => ()); "store 8 bytes source_reg_stack_or_val dest_reg_or_stack, ignoring upper 3 bytes of reg"; }
+    instr INSTR_DUP { INSTR_DUP_STR = dup; {
+        unsafe {
+            let mutor = thread.mutator();
+            let v = mutor.read_u32(mutor.registers[REG_S as usize]);
+            mutor.registers[REG_S as usize] += 1;
+            thread.write_u32(mutor.registers[REG_S as usize], v);
+        }
+    }; "duplicate topmost stack element"; }
+    instr INSTR_POP { INSTR_POP_STR = pop; unsafe { let mutor = thread.mutator();  mutor.registers[REG_S as usize] -= 1; }; "removes topmost stack element"; }
 }
