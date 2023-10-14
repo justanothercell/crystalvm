@@ -1,7 +1,7 @@
 @0x00
 mov stack %S
 main:
-    mov message %47
+    mov _data_string_welome_message %47
     call print
     repl:
         read_stdin %1
@@ -27,17 +27,60 @@ main:
         flush_stdout
         jmp repl
     repl_end:
-    mov message2 %47
+    mov _data_string_repl_bye_message %47
+    call print
+
+    mov _data_string_foo %0 
+    mov _data_string_bar %1 
+    call do_compare
+
+    mov _data_string_foo %0 
+    mov _data_string_foo %1 
+    call do_compare
+
+    mov 3.1415 *
+    mov 0x89ABCDEF *
+    mov -4i *
+    mov 42069 *
+    mov _data_string_int_formats %45
+    call printf
+
+    mov -12312.7 *
+    mov -511.12918 * // (gets a random hex vaö)
+    mov -55i *
+    mov 1237128973 *
+    mov _data_string_int_formats %45
+    call printf
+
+    mov _data_string_goodbye_message %47
     call print
 hlt:
     jmp hlt
 
+do_compare:
+    mov %0 %46
+    mov %1 %47
+    call strcmp
+    jnz _do_compare_false
+    _do_compare_true:
+        mov _data_string_true *
+        jmp _do_compare_end
+    _do_compare_false:
+        mov _data_string_false *
+    _do_compare_end:
+        mov _data_string_compare_result_format %45    
+        mov %1 *
+        mov %0 *
+        call printf
+        ret
+
 // Prints a null terminated string
 // Args
-//   %47 - message addr
+//   %47 - string addr
 // Uses
-//   %46 - printed char, lowest byte 0 on return
-//   %47 - char addr, points to end of string on return
+//   %46, %47
+// Output
+//   %47 points to end of string on return
 print:
     _print_loop:
         ld8 %47 %46
@@ -49,13 +92,229 @@ print:
     _print_end:
         ret
 
+// Prints a null terminated string. Inserts a formatted arg from stack at:
+//   %s - string
+//   %u - unsigned int
+//   %i - signed int
+//   %f - float
+//   %x - hex
+//   %% - write percentage sign, does not touch stac
+// If the inserted string ptr is 0, it skips it
+// Example
+//   "A % B\0"  and the stack points to string "XY\0" => "A XY B" (printed)
+// Args
+//   %45 - string addr
+//   stack - string ptrs to be inserted
+// Uses
+//   %42, %43, %44, %45, %46 and %47 via print
+// Output
+//   %45 and %47 points to end of string on return
+$PRINT_FLOAT_NUM_DIGITS 7
+printf:
+    _printf_loop:
+        ld8 %45 %46
+        cmp %46 0
+        jz _printf_end
+        add %45 1 %45
+        cmp %46 37 // '%' escape
+        jnz _printf_insert_end
+        _printf_insert:
+            ld8 %45 %46
+            cmp %46 0
+            add %45 1 %45
+            jz _printf_end
+            cmp %46 37 // '%'
+            jz _printf_insert_end
+            rotu
+            mov * %47
+            sub %B 4 %B
+            cmp %46 115 // 's'
+            jz _printf_insert_s
+            cmp %46 117 // 'u'
+            jz _printf_insert_u
+            cmp %46 105 // 'i'
+            jz _printf_insert_i
+            cmp %46 102 // 'f'
+            jz _printf_insert_f
+            cmp %46 120 // 'x'
+            jz _printf_insert_x
+            jmp _printf_insert_end
+            _printf_insert_s:
+                cmp %47 0
+                jz _printf_loop
+                call print
+                jmp _printf_loop
+            _printf_insert_u:
+                mov 0 %46
+                _printf_insert_u_rev_loop:
+                    rem %47 10 %44
+                    mul %46 10 %46
+                    add %46 %44 %46
+                    div %47 10 %47
+                    cmp %47 0
+                    jnz _printf_insert_u_rev_loop
+                _printf_insert_u_loop:
+                    rem %46 10 %47
+                    add %47 48 %47
+                    write_stdout %47
+                    div %46 10 %46
+                    cmp %46 0
+                    jnz _printf_insert_u_loop
+                jmp _printf_loop
+            _printf_insert_i:
+                mov 0 %46
+                icmp %47 0
+                jns _printf_insert_i_rev_loop
+                write_stdout 45 // '-'
+                isub 0 %47 %47
+                _printf_insert_i_rev_loop:
+                    irem %47 10 %44
+                    imul %46 10 %46
+                    iadd %46 %44 %46
+                    idiv %47 10 %47
+                    icmp %47 0
+                    jnz _printf_insert_i_rev_loop
+                _printf_insert_i_loop:
+                    irem %46 10 %47
+                    iadd %47 48 %47
+                    write_stdout %47
+                    idiv %46 10 %46
+                    icmp %46 0
+                    jnz _printf_insert_i_loop
+                jmp _printf_loop
+            _printf_insert_x:
+                mov 0 %42 // digits
+                _printf_insert_x_loop:
+                    shr %47 28 %46
+                    add %46 48 %46
+                    cmp %46 58 // A-F digit?
+                    js _printf_insert_x_loop_is_num
+                    add %46 7 %46
+                    _printf_insert_x_loop_is_num:
+                    shl %47 4 %47
+                    write_stdout %46
+                    add %42 1 %42
+                    cmp %42 8
+                    jnz _printf_insert_x_loop
+                jmp _printf_loop
+            _printf_insert_f:
+                mov 0 %42 // digits
+                mov 0 %46
+                fcmp %47 0
+                jns _printf_insert_f_split_at_dot
+                write_stdout 45 // '-'
+                fsub 0 %47 %47
+                _printf_insert_f_split_at_dot:
+                    fpart %47 %43
+                    ipart %47 %47
+                    convf2i %47 %47
+                _printf_insert_f_ipart_rev_loop:
+                    irem %47 10 %44
+                    imul %46 10 %46
+                    iadd %46 %44 %46
+                    idiv %47 10 %47
+                    icmp %47 0
+                    jnz _printf_insert_f_ipart_rev_loop
+                _printf_insert_f_ipart_loop:
+                    irem %46 10 %47
+                    iadd %47 48 %47
+                    write_stdout %47
+                    add %42 1 %42
+                    idiv %46 10 %46
+                    icmp %46 0
+                    jnz _printf_insert_f_ipart_loop
+                fcmp %43 0
+                jz _printf_loop
+                write_stdout 46 // '.'
+                _printf_insert_f_fpart_loop:
+                    fmul %43 10.0 %43
+                    ipart %43 %47
+                    fpart %43 %43
+                    cmp %42 (PRINT_FLOAT_NUM_DIGITS - 1)
+                    jnz _printf_insert_f_fpart_loop_not_last_digit
+                    round %43 %43
+                    _printf_insert_f_fpart_loop_not_last_digit:
+                    convf2i %47 %47
+                    iadd %47 48 %47
+                    write_stdout %47
+                    add %42 1 %42
+                    cmp %42 PRINT_FLOAT_NUM_DIGITS
+                    jz _printf_loop
+                    fcmp %43 0.0
+                    jnz _printf_insert_f_fpart_loop
+            jmp _printf_loop
+        _printf_insert_end:
+        write_stdout %46
+        flush_stdout
+    jmp _printf_loop
+    _printf_end:
+        ret
+
+// Compare two null terminated strings
+// Args:
+//   %46 - string a addr
+//   %47 - string b addr
+// Uses:
+//   %44 - char a, \0 or the char of inequality
+//   %45 - char b, \0 or the char of inequality
+//   %46 - char addr a, points to end of string a or the point of inequality on return
+//   %47 - char addr b, points to end of string b or the point of inequality on return
+// Output:
+//   FLAG_BIT_Z is set if equal, unset if not equal
+strcmp:
+    _strcmp_loop:
+        ld8 %46 %44
+        ld8 %47 %45
+        cmp %44 %45
+        jnz _strcmp_end
+        cmp %44 0
+        jz _strcmp_end
+        add %46 1 %46
+        add %47 1 %47
+        jmp _strcmp_loop
+    _strcmp_end:
+        ret
+
+// Get the length of a null terminated string
+// Args:
+//   %47 - string ptr
+// Uses:
+//   %45, %46, %47
+// Output:
+//   %46 - len of string
+strlen:
+    mov %47 %46
+    _strlen_loop:
+        ld8 %46 %45
+        cmp %45 0
+        jz _strlen_end
+        add %46 1 %46
+        jmp _strlen_loop
+    _strlen_end:
+        sub %46 %47 %46
+        ret
+
 instr_end:
 @align(instr_end, 0x10)
 data:
-    message:
+    _data_string_welome_message:
         .ascii "hello, world\nStarting repl...\n\0"
-    message2:
-        .ascii "Stopping via CTRL+C!\nPress again to shutdown!\n\0"
+    _data_string_repl_bye_message:
+        .ascii "Aborting repl via CTRL+C!\n\0"
+    _data_string_goodbye_message:
+        .ascii "Terminating! (CTRL+C to exit noop loop)\n\0"
+    _data_string_true:
+        .ascii "true\0"
+    _data_string_false:
+        .ascii "false\0"
+    _data_string_compare_result_format:
+        .ascii "\"%s\" == \"%s\": %s\n\0"
+    _data_string_foo:
+        .ascii "foo\0"
+    _data_string_bar:
+        .ascii "bar\0"
+    _data_string_int_formats:
+        .ascii "uint: %u iint: %i hex: 0x%x float: %f%%\n\0"
 data_end:
 @align(data_end, 0x10)
 stack:

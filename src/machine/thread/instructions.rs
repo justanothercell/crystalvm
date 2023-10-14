@@ -185,10 +185,10 @@ define_instructions! {
     instr INSTR_CONVI2F { INSTR_CONVI2F_STR = convi2f; impl_func!(thread |a: i32| a as f32 => (r: f32 => [write to reg b])); "i32: a as f32 = b"; }
 
     instr INSTR_FADD { INSTR_FADD_STR = fadd; impl_func!(thread |a: f32, b: f32| a + b => (r: f32 => [write to reg c])); "f32: a + b = c"; }
-    instr INSTR_FSUB { INSTR_FSUB_STR = fsub; impl_func!(thread |a: f32, b: f32| a + b => (r: f32 => [write to reg c])); "f32: a - b = c"; }
-    instr INSTR_FMUL { INSTR_FMUL_STR = fmul; impl_func!(thread |a: f32, b: f32| a + b => (r: f32 => [write to reg c])); "f32: a * b = c"; }
-    instr INSTR_FDIV { INSTR_FDIV_STR = fdiv; impl_func!(thread |a: f32, b: f32| a + b => (r: f32 => [write to reg c])); "f32: a / b = c"; }
-    instr INSTR_FREM { INSTR_FREM_STR = frem; impl_func!(thread |a: f32, b: f32| a + b => (r: f32 => [write to reg c])); "f32: a % b = c"; }
+    instr INSTR_FSUB { INSTR_FSUB_STR = fsub; impl_func!(thread |a: f32, b: f32| a - b => (r: f32 => [write to reg c])); "f32: a - b = c"; }
+    instr INSTR_FMUL { INSTR_FMUL_STR = fmul; impl_func!(thread |a: f32, b: f32| a * b => (r: f32 => [write to reg c])); "f32: a * b = c"; }
+    instr INSTR_FDIV { INSTR_FDIV_STR = fdiv; impl_func!(thread |a: f32, b: f32| a / b => (r: f32 => [write to reg c])); "f32: a / b = c"; }
+    instr INSTR_FREM { INSTR_FREM_STR = frem; impl_func!(thread |a: f32, b: f32| a % b => (r: f32 => [write to reg c])); "f32: a % b = c"; }
     instr INSTR_FREME { INSTR_FREME_STR = freme; impl_func!(thread |a: f32, b: f32| f32::rem_euclid(a, b) => (r: f32 => [write to reg c])); "f32: a % b = c (euclid)"; }
     instr INSTR_FABS { INSTR_FABS_STR = fabs; impl_func!(thread |a: f32, b: f32| f32::rem_euclid(a, b) => (r: f32 => [write to reg c])); "f32: a % b = c (euclid)"; }
     instr INSTR_FPOWI { INSTR_FPOWI_STR = fpowi; impl_func!(thread |a: f32, b: i32| f32::powi(a, b) => (r: f32 => [write to reg c])); "f32: a ** (i32)b = c"; }
@@ -254,23 +254,43 @@ define_instructions! {
     instr INSTR_JMP { INSTR_JMP_STR = jmp; impl_jump!(thread jump a); "jump to addr"; }
     instr INSTR_CALL { INSTR_CALL_STR = call; unsafe {
         let mutor = thread.mutator();
+        //println!("{:?}", mutor.registers);
         let addr = mutor.read_arg(a);
-        mutor.registers[REG_S as usize] += 1;
+        mutor.registers[REG_S as usize] += 4;
         let base = mutor.registers[REG_S as usize];
         mutor.write_u32(mutor.registers[REG_S as usize], mutor.registers[REG_I as usize]);
-        mutor.registers[REG_S as usize] += 1;
+        mutor.registers[REG_S as usize] += 4;
         mutor.write_u32(mutor.registers[REG_S as usize], mutor.registers[REG_B as usize]);
         mutor.registers[REG_B as usize] = base;
         mutor.registers[REG_I as usize] = addr;
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize - 12]));
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize - 8]));
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize - 4]));
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize]));
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize + 4]));
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize + 8]));
+        //println!("c {}", mutor.read_u32(mutor.registers[REG_S as usize + 12]));
+        //println!("{:?}", mutor.registers);
+        //println!();
     }; "call a function at addr which returns via `ret`, adding a stack frame"; }
     instr INSTR_RET { INSTR_RET_STR = ret;  unsafe {
         let mutor = thread.mutator();
+        //println!("{:?}", mutor.registers);
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize - 12]));
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize - 8]));
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize - 4]));
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize]));
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize + 4]));
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize + 8]));
+        //println!("r {}", mutor.read_u32(mutor.registers[REG_S as usize + 12]));
         mutor.registers[REG_S as usize] = mutor.registers[REG_B as usize];
         let ret_i = mutor.read_u32(mutor.registers[REG_S as usize]);
-        let base = mutor.read_u32(mutor.registers[REG_S as usize] + 1);
+        let base = mutor.read_u32(mutor.registers[REG_S as usize] + 4);
         mutor.registers[REG_I as usize] = ret_i;
         mutor.registers[REG_B as usize] = base;
-        mutor.registers[REG_S as usize] -= 1;
+        mutor.registers[REG_S as usize] -= 4;
+        //println!("{:?}", mutor.registers);
+        //println!();
     }; "return from a function, removing a stack frame"; }
     
     
@@ -305,9 +325,39 @@ define_instructions! {
         unsafe {
             let mutor = thread.mutator();
             let v = mutor.read_u32(mutor.registers[REG_S as usize]);
-            mutor.registers[REG_S as usize] += 1;
+            mutor.registers[REG_S as usize] += 4;
             thread.write_u32(mutor.registers[REG_S as usize], v);
         }
     }; "duplicate topmost stack element"; }
-    instr INSTR_POP { INSTR_POP_STR = pop; unsafe { let mutor = thread.mutator();  mutor.registers[REG_S as usize] -= 1; }; "removes topmost stack element"; }
+    instr INSTR_POP { INSTR_POP_STR = pop; unsafe { let mutor = thread.mutator();  mutor.registers[REG_S as usize] -= 4; }; "removes topmost stack element"; }
+    instr INSTR_ROTD { INSTR_ROTD_STR = rotd; {
+        unsafe {
+            let mutor = thread.mutator();
+            let a = mutor.read_u32(mutor.registers[REG_S as usize] - 8);
+            let b = mutor.read_u32(mutor.registers[REG_S as usize] - 4);
+            let c = mutor.read_u32(mutor.registers[REG_S as usize]);
+            mutor.write_u32(mutor.registers[REG_S as usize] - 8, c);
+            mutor.write_u32(mutor.registers[REG_S as usize] - 4, a);
+            mutor.write_u32(mutor.registers[REG_S as usize], b);
+        }
+    }; "rotates-down the top stack elem 2 places, moving second and third one up each: (bottom) a b c (top) -> (bottom) c a b (top). opposite of rotu"; }
+    instr INSTR_ROTU { INSTR_ROTU_STR = rotu; {
+        unsafe {
+            let mutor = thread.mutator();
+            let a = mutor.read_u32(mutor.registers[REG_S as usize] - 8);
+            let b = mutor.read_u32(mutor.registers[REG_S as usize] - 4);
+            let c = mutor.read_u32(mutor.registers[REG_S as usize]);
+            mutor.write_u32(mutor.registers[REG_S as usize] - 8, b);
+            mutor.write_u32(mutor.registers[REG_S as usize] - 4, c);
+            mutor.write_u32(mutor.registers[REG_S as usize], a);
+        }
+    }; "rotates-up the third stack elem 2 places, moving first and second down one each: (bottom) a b c (top) -> (bottom) b c a (top). opposite of rotd"; }
+
+    instr INSTR_BREAKPOINT { INSTR_BREAKPOINT_STR = breakpoint; { 
+        println!();
+        for i in 40..50 {
+            println!(" {:2} | {:10} | 0x{:08X} | {}", i, thread.registers[i], thread.registers[i], unsafe { std::mem::transmute::<u32, f32>(thread.registers[i]) }); 
+        }
+        std::io::stdin().read_line(&mut String::new()).unwrap(); 
+    }; "debug breakpoint"; }
 }

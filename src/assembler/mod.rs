@@ -14,13 +14,15 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
     let mut code = vec![];
     let instr_map = instr_name_id_map();
     let func_map = expr_funcs_map();
-    let mut labels = HashMap::new();
+    let mut variables = HashMap::new();
     let mut addr = 0;
     for (loc, i) in &instrs {
         match i {
-            Instruction::Variable(_, _, _) => todo!(),
+            Instruction::Variable(ident, e) => if let Ok(v) = e.eval(&variables, &func_map, Some(&loc)) {
+                variables.insert(ident.to_string(), v);
+            },
             Instruction::Location(e) => {
-                let l = match e.eval(&labels, &func_map, Some(&loc))? {
+                let l = match e.eval(&variables, &func_map, Some(&loc))? {
                     Value::UnsignedInteger(u) => u,
                     // should not be that way due to checks earlier
                     other => Err(Error(format!("@Location expects value of type unsized integer, found {other:?}"), Some(loc.clone())))?
@@ -28,13 +30,14 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
                 if l < addr { Err(Error(format!("Location @{l} is already behind current addr: {addr}"), Some(loc.clone())))? }
                 addr = l
             },
-            Instruction::Label(l) => { let _ = labels.insert(l.to_string(), Value::UnsignedInteger(addr)); },
+            Instruction::Label(l) => { let _ = variables.insert(l.to_string(), Value::UnsignedInteger(addr)); },
             Instruction::Command(_, args) => {
                 addr += 4;
                 for a in args {
                 match a {
                     Arg::Expr(_) => addr += 4,
                     Arg::Register(_) => (),
+                    Arg::Stack => ()
                 }
             }},
             Instruction::Data(d) => match d {
@@ -50,15 +53,15 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
         }
     }
     println!("Labled:");
-    for (label, i) in &labels {
+    for (label, i) in &variables {
         println!("  {label}: {i:?}");
     }
     println!("Assembling:");
     for (loc, i) in &instrs {
         match i {
-            Instruction::Variable(_, _, _) => (),
+            Instruction::Variable(ident, e) => { let _ = variables.insert(ident.to_string(), e.eval(&variables, &func_map, Some(&loc))?); },
             Instruction::Location(e) => {
-                let l = match e.eval(&labels, &func_map, Some(&loc))? {
+                let l = match e.eval(&variables, &func_map, Some(&loc))? {
                     Value::UnsignedInteger(u) => u,
                     // should not be a case due to checks earlier
                     _ => unreachable!()
@@ -76,8 +79,9 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
                 let mut lit_args = vec![];
                 for a in args { 
                     match a {
-                        Arg::Expr(e) => { let v = e.eval(&labels, &func_map, Some(&loc))?; print!(" {v:?}");command = command << 7 | 0b0111_1111; lit_args.push(v); },
+                        Arg::Expr(e) => { let v = e.eval(&variables, &func_map, Some(&loc))?; print!(" {v:?}");command = command << 7 | 0b0111_1111; lit_args.push(v); },
                         Arg::Register(r) => { print!(" %{r}"); command = command << 7 | r; },
+                        Arg::Stack => { print!(" *"); command = command << 7 | 0b0111_1110 }
                     }
                 }
                 println!();
@@ -142,9 +146,9 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
     Ok(match get!(0) {
         Token::Control('$') => { 
             let label = get!(1 => Ident); 
-            let (expr, i) = collect_expr(&tokens, 1, loc)?;
+            let (expr, i) = collect_expr(&tokens, 2, loc)?;
             assert_ended!(i);
-            Instruction::Variable(label.to_string(), expr, None)
+            Instruction::Variable(label.to_string(), expr)
         },
         Token::Control('@') => { let (expr, i) = collect_expr(&tokens, 1, loc)?; assert_ended!(i); Instruction::Location(expr) },
         Token::Control('.') => if let Some(dtype) = get!(? 1 => Ident) {
@@ -186,6 +190,9 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
                     };
                     args.push(Arg::Register(r));
                     index += 2;
+                } else if get!(? index => Control) == Some(&'*') {
+                    index += 1;
+                    args.push(Arg::Stack);
                 } else {
                     let (expr, i) = collect_expr(&tokens, index, loc)?;
                     args.push(Arg::Expr(expr));
@@ -228,12 +235,13 @@ pub(crate) struct Loc {
 #[derive(Debug)]
 enum Arg {
     Expr(Expression),
-    Register(u32)
+    Register(u32),
+    Stack
 }
 
 #[derive(Debug)]
 enum Instruction {
-    Variable(String, Expression, Option<Value>),
+    Variable(String, Expression),
     Location(Expression),
     Label(String),
     Command(String, Vec<Arg>),
@@ -284,8 +292,8 @@ fn tokenize(s: &str, loc: Option<&Loc>) -> Result<Vec<Token>, Error> {
         match c {
             c if !c.is_ascii() => Err(Error(format!("Invalid char `{c}`. Only ascii allowed."), loc.cloned()))?,
             c if c.is_whitespace() => { iter.next(); },
-            c if c.is_numeric() => tokens.push(str_to_num_lit(&collect_word(&mut iter), loc)?),
-            c if c.is_alphabetic() || c == '_' => tokens.push(Token::Ident(collect_word(&mut iter))),
+            c if c.is_numeric() => tokens.push(str_to_num_lit(&collect_word(&mut iter, |c| !(c.is_alphanumeric() || c == '_' || c == '.')), loc)?),
+            c if c.is_alphabetic() || c == '_' => tokens.push(Token::Ident(collect_word(&mut iter, |c| !(c.is_alphanumeric() || c == '_')))),
             '"' => {
                 iter.next();
                 let mut string = String::new();
@@ -306,10 +314,10 @@ fn tokenize(s: &str, loc: Option<&Loc>) -> Result<Vec<Token>, Error> {
     Ok(tokens)
 }
 
-pub fn collect_word(iter: &mut Peekable<impl Iterator<Item = char>>) -> String {
+pub fn collect_word(iter: &mut Peekable<impl Iterator<Item = char>>, check: fn(char) -> bool) -> String {
     let mut out = String::new();
     while let Some(&c) = iter.peek() {
-        if !(c.is_alphanumeric() || c == '_') { break; }
+        if check(c) { break; }
         out.push(c);
         iter.next();
     }
@@ -358,6 +366,7 @@ fn str_to_num_lit(n: &str, loc: Option<&Loc>) -> Result<Token, Error>{
                 'x' => Some(0x10), // hexadecimal
                 'd' => Some(10),   // decimal
                 c if c.is_numeric() => None, // decimal (but no removal needed)
+                '.' => None, // no removal needed, we just stumbled across `0.xxx` float
                 c => Err(Error(format!("Invalid radix `{c}` for number literal `{n}`"), loc.cloned()))?,
             };
             if let Some(r) = r {

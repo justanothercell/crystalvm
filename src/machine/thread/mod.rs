@@ -170,13 +170,11 @@ impl ThreadCore {
                 let v = self.read_u32(self.registers[REG_I as usize]);
                 self.advance_ip();
                 return v;
-            }
-            if reg == 0b0111_1110 {
+            } else if reg == 0b0111_1110 {
                 let v = self.read_u32(mutor.registers[REG_S as usize]);
-                mutor.registers[REG_S as usize] -= 1;
+                mutor.registers[REG_S as usize] -= 4;
                 return v;
-            }
-            if reg < NUM_REGS as u8 {
+            } else if reg < NUM_REGS as u8 {
                 mutor.registers[reg as usize]
             } else {
                 mutor.registers[REG_F as usize] |= FLAG_BIT_E;
@@ -189,11 +187,10 @@ impl ThreadCore {
         unsafe { 
             let mutor = self.mutator();
             if reg == 0b0111_1110 {
-                mutor.registers[REG_S as usize] += 1;
+                mutor.registers[REG_S as usize] += 4;
                 self.write_u32(mutor.registers[REG_S as usize], val);
                 return;
-            }
-            if reg < NUM_REGS as u8 {
+            } else if reg < NUM_REGS as u8 {
                 mutor.registers[reg as usize] = val;
             } else {
                 mutor.registers[REG_F as usize] |= FLAG_BIT_E;
