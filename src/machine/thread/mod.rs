@@ -207,6 +207,7 @@ impl ThreadCore {
     }
 
     #[inline]
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn mutator(&self) -> &mut Self {
         #[allow(invalid_reference_casting)]
         &mut *(self as *const _ as *mut _)

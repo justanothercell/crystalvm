@@ -4,6 +4,7 @@
 #![feature(try_blocks)]
 #![feature(macro_metavar_expr)]
 #![feature(int_roundings)]
+#![feature(let_chains)]
 
 
 pub(crate) mod machine;

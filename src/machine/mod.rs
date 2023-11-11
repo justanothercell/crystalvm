@@ -23,11 +23,13 @@ pub struct MachineCtx {
 
 impl MachineCtx {
     #[inline]
+    #[allow(clippy::mut_from_ref)]
     pub(crate) unsafe  fn mem_mut<'a>(&'a self) -> &'a mut Vec<u8> {
         #[allow(invalid_reference_casting)]
         unsafe { &mut *(&*self.memory as *const Vec<u8> as *mut Vec<u8>) }
     }
     #[inline]
+    #[allow(clippy::mut_from_ref)]
     pub(crate) unsafe fn mutator(&self) -> &mut Self {
         #[allow(invalid_reference_casting)]
         &mut *(self as *const _ as *mut _)

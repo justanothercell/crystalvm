@@ -1,6 +1,6 @@
 mod expression;
 
-use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable, fs::File, io::Write, collections::HashMap};
+use std::{path::{Path, PathBuf}, rc::Rc, fmt::{Display, Debug}, str::FromStr, iter::Peekable, fs::File, io::Write, collections::HashMap, hash::Hash};
 
 use crate::{machine::thread::{REG_C, REG_F, REG_S, REG_I, REG_B, instructions::instr_name_id_map}, assembler::expression::expr_funcs_map};
 
@@ -79,13 +79,13 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
                 let mut lit_args = vec![];
                 for a in args { 
                     match a {
-                        Arg::Expr(e) => { let v = e.eval(&variables, &func_map, Some(&loc))?; print!(" {v:?}");command = command << 7 | 0b0111_1111; lit_args.push(v); },
+                        Arg::Expr(e) => { let v = e.eval(&variables, &func_map, Some(loc))?; print!(" {v:?}");command = command << 7 | 0b0111_1111; lit_args.push(v); },
                         Arg::Register(r) => { print!(" %{r}"); command = command << 7 | r; },
                         Arg::Stack => { print!(" *"); command = command << 7 | 0b0111_1110 }
                     }
                 }
                 println!();
-                command = command << (7 * (3-args.len()));
+                command <<= 7 * (3-args.len());
                 code.append(&mut command.to_le_bytes().into_iter().collect());
                 for a in lit_args {
                     code.append(&mut a.to_le_bytes().into_iter().collect());
@@ -93,7 +93,13 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
             },
             Instruction::Data(d) => match d {
                 Data::Ascii(s) => code.append(&mut s.clone().into_bytes()),
-                _ => todo!()
+                Data::F32(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
+                Data::U32(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
+                Data::I32(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
+                Data::U16(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
+                Data::I16(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
+                Data::U8(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
+                Data::I8(v) => code.append(&mut v.eval(&variables, &func_map, Some(loc))?.to_le_bytes().to_vec()),
             },
         }
     }
@@ -104,18 +110,42 @@ pub fn assemble(file_in: impl AsRef<Path>, file_out: impl AsRef<Path>) -> Result
     Ok(())
 }
 
-fn parse_file<'a>(file: impl AsRef<Path>) -> Result<Vec<(Loc, Instruction)>, Error> {
-    let lines = read_lines(file)?;
+fn parse_file(file: impl AsRef<Path>) -> Result<Vec<(Loc, Instruction)>, Error> {
+    let lines = read_lines(file.as_ref())?;
     let tokens = tokenize_lines(lines)?;
     let mut instrs = vec![];
+    let mut reg_aliases = HashMap::new();
     for (loc, line) in tokens {
-        let instr = instructionize(line, Some(&loc))?;
+        if line.is_empty() { continue; }
+        if line[0] == Token::Control('!') {
+            if line.len() < 2 { Err(Error("Invalid macro syntax, expected !<macro...>".to_string(), Some(loc.clone())))?; }
+            if line[1] == Token::Ident("include".to_string()) {
+                if line.len() == 3 && let Token::Ascii(f) = &line[2] {
+                    let mut included = file.as_ref().to_path_buf();
+                    included.pop();
+                    included.push(f);
+                    included.set_extension("casm");
+                    let mut incl = parse_file(included)?;
+                    instrs.append(&mut incl);
+                    continue;
+                } else {
+                    Err(Error("Invalid macro syntax, expected !include \"module\"".to_string(), Some(loc.clone())))?;
+                }
+            } else if line[1] == Token::Control('%') {
+                if line.len() != 6 { Err(Error("Invalid macro syntax, expected !%alias = %reg".to_string(), Some(loc.clone())))?; }
+                reg_aliases.insert(line[2].clone(), line[5].clone());
+                continue;
+            } else {
+                Err(Error(format!("Invalid macro syntax, expected !<macro> <args> where <macro> is an identifier, or !%alias = %reg, found !{:?}", line[1]), Some(loc.clone())))?;
+            }
+        }
+        let instr = instructionize(line, &reg_aliases, Some(&loc))?;
         instrs.push((loc, instr));
     }
     Ok(instrs)
 }
 
-fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, Error> {
+fn instructionize(tokens: Vec<Token>, reg_aliases: &HashMap<Token, Token>, loc: Option<&Loc>) -> Result<Instruction, Error> {
     macro_rules! assert_ended {
         ($index: expr) => { {
             if tokens.len() < $index { panic!("Index should be less than or equal to tokens length! Try testing for a smaller index!") }
@@ -167,7 +197,7 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
                 "i8" => { let (expr, i) = collect_expr(&tokens, 2, loc)?; assert_ended!(i); Instruction::Data(Data::I8(Box::new(expr))) },
                 _ => Err(Error(format!("Invalid data type `.{dtype}`"), loc.cloned()))?
             }
-        } else { Err(Error(format!("Invalid instruction syntax, expected `.ascii`, `.f32`, `.u32`, `.i32`, `.u16`, `.i16`, `.u8` or `.i8`"), loc.cloned()))? },
+        } else { Err(Error("Invalid instruction syntax, expected `.ascii`, `.f32`, `.u32`, `.i32`, `.u16`, `.i16`, `.u8` or `.i8`".to_string(), loc.cloned()))? },
         Token::Ident(ident) => if get!(? 1 => Control) == Some(&':') {
             assert_ended!(2);
             Instruction::Label(ident.clone())
@@ -176,7 +206,9 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
             let mut index = 1;
             while index < tokens.len() {
                 if get!(? index => Control) == Some(&'%') {
-                    let r = match get!(index + 1) {
+                    let raw = get!(index + 1);
+                    let reg = reg_aliases.get(raw).unwrap_or(raw);
+                    let r = match reg {
                         Token::Ident(i) => match i.as_str() {
                             "I" => REG_I,   
                             "B" => REG_B, 
@@ -201,7 +233,7 @@ fn instructionize(tokens: Vec<Token>, loc: Option<&Loc>) -> Result<Instruction, 
             }
             Instruction::Command(ident.to_string(), args)
         },
-        _ => Err(Error(format!("Invalid instruction syntax"), loc.cloned()))?
+        _ => Err(Error("Invalid instruction syntax".to_string(), loc.cloned()))?
     })
 }
 
@@ -209,7 +241,7 @@ fn tokenize_lines(lines: Vec<(Loc, String)>) -> Result<Vec<(Loc, Vec<Token>)>, E
     let mut tokens = vec![];
     for (loc, line) in lines {
         let t = tokenize(&line, Some(&loc))?;
-        if t.len() == 0 { continue; }
+        if t.is_empty(){ continue; }
         tokens.push((loc, t));
     }
     Ok(tokens)
@@ -275,7 +307,7 @@ impl Data {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate)enum Token {
     Ident(String),
     UnsignedInteger(u32, u32),
@@ -283,6 +315,22 @@ pub(crate)enum Token {
     Float(f32),
     Ascii(String),
     Control(char)
+}
+
+impl Eq for Token {}
+
+impl Hash for Token {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Token::Ident(i) => i.hash(state),
+            Token::UnsignedInteger(u, _) => u.hash(state),
+            Token::SignedInteger(s, _) => s.hash(state),
+            Token::Float(f) => f.to_le_bytes().hash(state),
+            Token::Ascii(s) => s.hash(state),
+            Token::Control(c) => c.hash(state),
+        }
+    }
 }
 
 fn tokenize(s: &str, loc: Option<&Loc>) -> Result<Vec<Token>, Error> {
@@ -305,7 +353,7 @@ fn tokenize(s: &str, loc: Option<&Loc>) -> Result<Vec<Token>, Error> {
                     string.push(c);
                     iter.next();
                 }
-                if iter.next().is_none() { Err(Error(format!("Unexpected end of line while in string literal"), loc.cloned()))? }
+                if iter.next().is_none() { Err(Error("Unexpected end of line while in string literal".to_string(), loc.cloned()))? }
                 tokens.push(unescape_str(&string, loc)?)
             },
             c => { tokens.push(Token::Control(c)); iter.next(); } ,
@@ -321,7 +369,7 @@ pub fn collect_word(iter: &mut Peekable<impl Iterator<Item = char>>, check: fn(c
         out.push(c);
         iter.next();
     }
-    return out;
+    out
 }
 
 fn unescape_str(str: &str, loc: Option<&Loc>) -> Result<Token, Error>{
@@ -350,14 +398,14 @@ fn unescape_str(str: &str, loc: Option<&Loc>) -> Result<Token, Error>{
 
 fn str_to_num_lit(n: &str, loc: Option<&Loc>) -> Result<Token, Error>{
     let mut num = n.replace('_', "");
-    if num.len() == 0 { Err(Error(format!("Invalid number literal `{n}`"), loc.cloned()))?; }
-    let signed = if num.chars().last().unwrap() == 'i' {
+    if num.is_empty() { Err(Error(format!("Invalid number literal `{n}`"), loc.cloned()))?; }
+    let signed = if num.ends_with('i') {
         num.pop();
         true
     } else { false };
-    if num.len() == 0 { Err(Error(format!("Invalid number literal `{n}`"), loc.cloned()))?; }
+    if num.is_empty() { Err(Error(format!("Invalid number literal `{n}`"), loc.cloned()))?; }
     let radix = if num.len() > 2 {
-        if num.chars().nth(0).unwrap() == '0' {
+        if num.starts_with('0') {
             let r = match num.chars().nth(1).unwrap() {
                 'b' => Some(0b10), // binary
                 'q' => Some(4),    // quaternal
@@ -384,17 +432,14 @@ fn str_to_num_lit(n: &str, loc: Option<&Loc>) -> Result<Token, Error>{
         f32::from_str(&num).map(|f| Token::Float(f)).map_err(|_|
             Error(format!("Invalid float literal `{n}`"), loc.cloned())
         )
+    } else if !signed {
+        u32::from_str_radix(&num, radix).map(|i|Token::UnsignedInteger(i, radix)).map_err(|_|
+            Error(format!("Invalid unsigned integer literal `{n}` with radix {radix}"), loc.cloned())
+        )
     } else {
-        if !signed {
-            u32::from_str_radix(&num, radix).map(|i|Token::UnsignedInteger(i, radix)).map_err(|_|
-                Error(format!("Invalid unsigned integer literal `{n}` with radix {radix}"), loc.cloned())
-            )
-        } else {
-            i32::from_str_radix(&num, radix).map(|i|Token::SignedInteger(i, radix)).map_err(|_|
-                Error(format!("Invalid signed integer literal `{n}` with radix {radix}"), loc.cloned())
-            )
-        }
-        
+        i32::from_str_radix(&num, radix).map(|i|Token::SignedInteger(i, radix)).map_err(|_|
+            Error(format!("Invalid signed integer literal `{n}` with radix {radix}"), loc.cloned())
+        )
     }?;
     Ok(lit)
 }
@@ -411,6 +456,7 @@ impl Error {
 }
 
 impl Display for Error {
+    #[allow(clippy::format_in_format_args)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Assembling Error:{}{}", match &self.1 {
             Some(loc) => {
@@ -418,7 +464,7 @@ impl Display for Error {
                 let n = loc.line - start + 3;
                 let lines = loc.code.split('\n').enumerate()
                     .skip(start).take(n)
-                    .map(|(i, l)| if i == loc.line { format!(">{:3} | {l}", i + 1) } else { format!("{:4} | {l}", i + 1) })
+                    .map(|(i, l)| if i == loc.line { format!(">{:4} | {l}", i + 1) } else { format!(" {:4} | {l}", i + 1) })
                     .collect::<Vec<_>>().join("\n");
                 format!("\n@{}:{}\n{}", loc.file.to_str().unwrap(), loc.line + 1, lines)
             }
